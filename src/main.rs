@@ -5,7 +5,6 @@ use winit::{
     event_loop::{ControlFlow, EventLoop},
     window::WindowBuilder,
 };
-//use std::num::Float;
 
 pub struct Ray {
     pub origin: Vec3,
@@ -29,39 +28,47 @@ fn sky_color(ray: &Ray) -> Vec3 {
     let t = 0.5 * (dir.y() + 1.0);
     let white = Vec3::new(1.0, 1.0, 1.0);
     let blue = Vec3::new(0.5, 0.7, 1.0);
-    (1.0 - t) * blue + t * white
+    (1.0 - t) * white + t * blue
 }
 
-fn hit_sphere(center: &Vec3, radius: f32, ray: &Ray) -> f32 {
-    let oc = ray.origin - *center;
-    let a = Vec3::length_squared(ray.dir);
-    let half_b = Vec3::dot(oc, ray.dir);
-    let c = Vec3::length_squared(oc) - radius * radius;
-    let discriminant = half_b * half_b - a * c;
-
-    if discriminant < 0.0 {
-        return -1.0;
-    }
-    (-half_b - discriminant.sqrt()) / a
-}
-
-fn ray_color(ray: &Ray) -> Vec3 {
-    let t = hit_sphere(&Vec3::new(0.0, 0.0, -1.0), 0.5, ray);
-    if t > 0.0 {
-        let normal = ray.at(t).normalize() - Vec3::new(0.0, 0.0, -1.0);
-        return 0.5 * Vec3::new(normal.x() + 1.0, normal.y() + 1.0, normal.z() + 1.0);
+fn ray_color(ray: &Ray, world: &dyn Hittable) -> Vec3 {
+    let mut hit = Hit::new();
+    if world.hit(ray, 0.0, f32::INFINITY, &mut hit) {
+        return 0.5 * (hit.normal + Vec3::new(1.0, 1.0, 1.0));
     }
     sky_color(ray)
 }
 
+#[derive(Copy, Clone)]
 pub struct Hit {
     p: Vec3,
     normal: Vec3,
     t: f32,
+    front_face: bool,
+}
+
+impl Hit {
+    fn new() -> Self {
+        Hit {
+            p: Vec3::zero(),
+            normal: Vec3::zero(),
+            t: 0.0,
+            front_face: true,
+        }
+    }
+
+    fn set_face_normal(&mut self, ray: &Ray, outward_normal: &Vec3) {
+        self.front_face = Vec3::dot(ray.dir, *outward_normal) < 0.0;
+        self.normal = if self.front_face {
+            *outward_normal
+        } else {
+            -*outward_normal
+        };
+    }
 }
 
 pub trait Hittable {
-    fn hit(&self, ray: &Ray, t_min: f32, t_max: f32, hit: &Hit) -> bool;
+    fn hit(&self, ray: &Ray, t_min: f32, t_max: f32, hit: &mut Hit) -> bool;
 }
 
 pub struct Sphere {
@@ -70,8 +77,53 @@ pub struct Sphere {
 }
 
 impl Hittable for Sphere {
-    fn hit(&self, ray: &Ray, t_min: f32, t_max: f32, hit: &Hit) -> bool {
-        return false;
+    fn hit(&self, ray: &Ray, t_min: f32, t_max: f32, hit: &mut Hit) -> bool {
+        let oc = ray.origin - self.center;
+        let a = Vec3::length_squared(ray.dir);
+        let half_b = Vec3::dot(oc, ray.dir);
+        let c = Vec3::length_squared(oc) - self.radius * self.radius;
+        let discriminant = half_b * half_b - a * c;
+
+        if discriminant < 0.0 {
+            return false;
+        }
+        let sqrtd = discriminant.sqrt();
+
+        let mut root = (-half_b - sqrtd) / a;
+        if root < t_min || t_max < root {
+            root = (-half_b + sqrtd) / a;
+            if root < t_min || t_max < root {
+                return false;
+            }
+        }
+
+        hit.t = root;
+        hit.p = ray.at(hit.t);
+        let outward_normal = (hit.p - self.center) / self.radius;
+        hit.set_face_normal(ray, &outward_normal);
+        true
+    }
+}
+
+pub struct HittableList {
+    objects: Vec<Box<dyn Hittable>>,
+}
+
+impl Hittable for HittableList {
+    fn hit(&self, ray: &Ray, t_min: f32, t_max: f32, hit: &mut Hit) -> bool {
+        let mut tmp_hit = Hit::new();
+        let mut hit_anything = false;
+        let mut closest_so_far = t_max;
+
+        for object in self.objects.iter() {
+            if object.hit(ray, t_min, closest_so_far, &mut tmp_hit) {
+                hit_anything = true;
+                closest_so_far = hit.t;
+                *hit = tmp_hit;
+            }
+        }
+
+        hit_anything
     }
 }
 
@@ -104,6 +156,20 @@ fn main() {
     let lower_left_corner =
         origin - horizontal / 2.0 - vertical / 2.0 - Vec3::new(0.0, 0.0, focal_length);
 
+    // World
+    let mut world = HittableList {
+        objects: vec![
+            Box::new(Sphere {
+                center: Vec3::new(0.0, 0.0, -1.0),
+                radius: 0.5,
+            }),
+            Box::new(Sphere {
+                center: Vec3::new(0.0, -100.5, -1.0),
+                radius: 100.0,
+            }),
+        ],
+    };
+
     println!();
     for j in 0..height {
         let row = j + 1;
@@ -115,18 +181,8 @@ fn main() {
                 origin,
                 dir: lower_left_corner + u * horizontal + v * vertical - origin,
             };
-
-            let pixel_color = ray_color(&ray);
-
-            /*
-            let col = Vec3::new(
-                (i as f32) / (width as f32),
-                (j as f32) / (height as f32),
-                0.25,
-            );
-            buffer[(j * width + i) as usize] = rgb_to_u32(col);
-            */
-            buffer[(j * width + i) as usize] = rgb_to_u32(pixel_color);
+            let pixel_color = ray_color(&ray, &world);
+            buffer[((height - j - 1) * width + i) as usize] = rgb_to_u32(pixel_color);
         }
     }
     println!();
