@@ -8,6 +8,6 @@ edition = "2021"
 [dependencies]
 winit = "0.26.1"
 softbuffer = "0.1.0"
-rayon = "1.5.0"
+threadpool = "1.8.1"
 instant = "0.1.12"
 glam = "0.8.5"

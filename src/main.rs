@@ -1,18 +1,21 @@
 use glam::Vec3;
 use softbuffer::GraphicsContext;
-use std::{rc::Rc, thread};
+use std::{sync::Arc, thread, time::Instant};
+use threadpool::ThreadPool;
 use winit::{
     dpi::LogicalSize,
     event::{Event, WindowEvent},
-    event_loop::{ControlFlow, EventLoop, EventLoopProxy},
+    event_loop::{ControlFlow, EventLoop},
     window::WindowBuilder,
 };
 
-const SAMPLES_PER_PIXEL: u32 = 128;
-const MAX_BOUNCES: u32 = 4;
+const SAMPLES_PER_PIXEL: u32 = 256;
+const MAX_BOUNCES: u32 = 8;
+const BLOCK_SIZE: u32 = 32;
 
+#[derive(Debug)]
 pub enum RenderEvent {
-    RowComplete(u32, Vec<u32>),
+    BlockComplete(u32, u32, u32, u32, Vec<u32>),
 }
 
 pub struct RandomSeries {
@@ -164,7 +167,7 @@ pub struct Hit {
     pub normal: Vec3,
     pub t: f32,
     pub front_face: bool,
-    pub material: Option<Rc<dyn Material>>,
+    pub material: Option<Arc<dyn Material>>,
 }
 
 impl Hit {
@@ -187,11 +190,12 @@ impl Hit {
         };
     }
 
-    fn set_material(&mut self, material: &Rc<dyn Material>) {
-        self.material = Some(material.clone());
+    fn set_material(&mut self, material: Arc<dyn Material>) {
+        self.material = Some(material);
     }
 }
 
+#[derive(Copy, Clone)]
 pub struct Camera {
     origin: Vec3,
     horizontal: Vec3,
@@ -222,7 +226,7 @@ impl Camera {
     }
 }
 
-pub trait Material {
+pub trait Material: Sync + Send {
     fn scatter(
         &self,
         ray_in: &Ray,
@@ -324,14 +328,14 @@ impl Material for DielectricMaterial {
     }
 }
 
-pub trait Hittable {
+pub trait Hittable: Sync + Send {
     fn hit(&self, ray: &Ray, t_min: f32, t_max: f32, hit: &mut Hit) -> bool;
 }
 
 pub struct Sphere {
     radius: f32,
     center: Vec3,
-    material: Rc<dyn Material>,
+    material: Arc<dyn Material>,
 }
 
 impl Hittable for Sphere {
@@ -359,7 +363,7 @@ impl Hittable for Sphere {
         hit.p = ray.at(hit.t);
         let outward_normal = (hit.p - self.center) / self.radius;
         hit.set_face_normal(ray, &outward_normal);
-        hit.set_material(&self.material);
+        hit.set_material(self.material.clone());
         true
     }
 }
@@ -386,10 +390,8 @@ impl Hittable for HittableList {
     }
 }
 
-fn render(width: u32, height: u32, event_loop_proxy: EventLoopProxy<RenderEvent>) {
+fn render(width: u32, height: u32, event_loop: &EventLoop<RenderEvent>, pool: &mut ThreadPool) {
     let aspect_ratio = width as f32 / height as f32;
-
-    // Camera
     let viewport_height = 2.0;
     let viewport_width = aspect_ratio * viewport_height;
     let camera = Camera::new(
@@ -400,26 +402,26 @@ fn render(width: u32, height: u32, event_loop_proxy: EventLoopProxy<RenderEvent>
     );
 
     // World
-    let material_center = Rc::new(LambertianMaterial {
+    let material_center = Arc::new(LambertianMaterial {
         albedo: Vec3::one(),
     });
-    let material_ground = Rc::new(LambertianMaterial {
+    let material_ground = Arc::new(LambertianMaterial {
         albedo: Vec3::one(),
     });
-    let material_left = Rc::new(MetalMaterial {
+    let material_left = Arc::new(MetalMaterial {
         albedo: Vec3::splat(0.8),
         fuzz: 0.3,
     });
-    let material_right = Rc::new(MetalMaterial {
+    let material_right = Arc::new(MetalMaterial {
         albedo: Vec3::splat(0.4),
         fuzz: 1.0,
     });
-    let material_glass = Rc::new(DielectricMaterial {
+    let material_glass = Arc::new(DielectricMaterial {
         albedo: Vec3::splat(1.0),
         ior: 1.5,
     });
 
-    let world = HittableList {
+    let world = Arc::new(HittableList {
         objects: vec![
             Box::new(Sphere {
                 center: Vec3::new(0.0, -100.5, -1.0),
@@ -454,28 +456,58 @@ fn render(width: u32, height: u32, event_loop_proxy: EventLoopProxy<RenderEvent>
                 material: material_center.clone(),
             }),
         ],
-    };
+    });
 
-    let mut series = RandomSeries::new(1234);
-    for j in 0..height {
-        let mut row = vec![0; width as usize];
-        for i in 0..width {
-            let mut accumulated_pixel_color = Vec3::zero();
-            for _ in 0..SAMPLES_PER_PIXEL {
-                let u = (i as f32 + series.random01()) / (width - 1) as f32;
-                let v = (j as f32 + series.random01()) / (height - 1) as f32;
-                let ray = camera.get_ray(u, 1.0 - v);
-                accumulated_pixel_color += ray_color(&ray, &world, &mut series, 0);
-            }
+    let num_vertical_blocks = (height as f32 / BLOCK_SIZE as f32).ceil() as u32;
+    let num_horizontal_blocks = (width as f32 / BLOCK_SIZE as f32).ceil() as u32;
+    for j in 0..num_vertical_blocks {
+        for i in 0..num_horizontal_blocks {
+            let event_loop_proxy = event_loop.create_proxy();
+            let world = world.clone();
+            pool.execute(move || {
+                let block_width = if (i + 1) * BLOCK_SIZE > width {
+                    BLOCK_SIZE - ((i + 1) * BLOCK_SIZE - width)
+                } else {
+                    BLOCK_SIZE
+                };
+                let block_height = if (j + 1) * BLOCK_SIZE > height {
+                    BLOCK_SIZE - ((j + 1) * BLOCK_SIZE - height)
+                } else {
+                    BLOCK_SIZE
+                };
 
-            const PIXEL_COLOR_SCALE: f32 = 1.0 / SAMPLES_PER_PIXEL as f32;
-            let c = accumulated_pixel_color * PIXEL_COLOR_SCALE;
-            let pixel_color = Vec3::new(c.x().sqrt(), c.y().sqrt(), c.z().sqrt());
-            row[i as usize] = rgb_to_u32(pixel_color);
+                let mut series = RandomSeries::new(j);
+                let mut block = vec![0; (block_width * block_height) as usize];
+                let ix = i * BLOCK_SIZE;
+                let iy = j * BLOCK_SIZE;
+                for y in 0..block_height {
+                    for x in 0..block_width {
+                        let mut accumulated_pixel_color = Vec3::zero();
+                        for _ in 0..SAMPLES_PER_PIXEL {
+                            let u = ((ix + x) as f32 + series.random01()) / (width - 1) as f32;
+                            let v = ((iy + y) as f32 + series.random01()) / (height - 1) as f32;
+                            let ray = camera.get_ray(u, 1.0 - v);
+                            accumulated_pixel_color += ray_color(&ray, &*world, &mut series, 0);
+                        }
+
+                        const PIXEL_COLOR_SCALE: f32 = 1.0 / SAMPLES_PER_PIXEL as f32;
+                        let c = accumulated_pixel_color * PIXEL_COLOR_SCALE;
+                        let pixel_color = Vec3::new(c.x().sqrt(), c.y().sqrt(), c.z().sqrt());
+                        block[(y * block_width + x) as usize] = rgb_to_u32(pixel_color);
+                    }
+                }
+                event_loop_proxy
+                    .send_event(RenderEvent::BlockComplete(
+                        ix,
+                        iy,
+                        block_width,
+                        block_height,
+                        block,
+                    ))
+                    .unwrap();
+            });
         }
-        event_loop_proxy.send_event(RenderEvent::RowComplete(j, row));
     }
-    println!("Done!");
 }
 
 fn main() {
@@ -494,13 +526,21 @@ fn main() {
         let size = graphics_context.window().inner_size();
         (size.width, size.height)
     };
-    let event_loop_proxy = event_loop.create_proxy();
-    let thread_handle = thread::spawn(move || render(width, height, event_loop_proxy));
+
+    let now = Instant::now();
+    let mut pool = threadpool::Builder::new().build();
+    render(width, height, &event_loop, &mut pool);
 
     let mut buffer = (0..((width * height) as usize))
         .map(|_| 0x00FFFFFF as u32)
         .collect::<Vec<_>>();
     graphics_context.set_buffer(&buffer, width as u16, height as u16);
+
+    thread::spawn(move || {
+        pool.join();
+        let elapsed = now.elapsed();
+        println!("Finished in {:.2?}", elapsed);
+    });
 
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Wait;
@@ -514,9 +554,12 @@ fn main() {
                 *control_flow = ControlFlow::Exit;
             }
             Event::UserEvent(event) => match event {
-                RenderEvent::RowComplete(row_index, data) => {
-                    for i in 0..width {
-                        buffer[(row_index * width + i) as usize] = data[i as usize];
+                RenderEvent::BlockComplete(x, y, bw, bh, data) => {
+                    for j in 0..bh {
+                        for i in 0..bw {
+                            buffer[((j + y) * width + i + x) as usize] =
+                                data[(j * bw + i) as usize];
+                        }
                     }
                     graphics_context.set_buffer(&buffer, width as u16, height as u16);
                 }
@@ -524,6 +567,4 @@ fn main() {
             _ => {}
         }
     });
-
-    //thread_handle.join().unwrap();
 }
