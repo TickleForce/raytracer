@@ -1,19 +1,19 @@
 use glam::Vec3;
 use softbuffer::GraphicsContext;
-use std::{
-    rc::Rc,
-    io::Write,
-    io::stdout,
-};
+use std::{rc::Rc, thread};
 use winit::{
     dpi::LogicalSize,
     event::{Event, WindowEvent},
-    event_loop::{ControlFlow, EventLoop},
+    event_loop::{ControlFlow, EventLoop, EventLoopProxy},
     window::WindowBuilder,
 };
 
-const SAMPLES_PER_PIXEL: u32 = 16;
+const SAMPLES_PER_PIXEL: u32 = 128;
 const MAX_BOUNCES: u32 = 4;
+
+pub enum RenderEvent {
+    RowComplete(u32, Vec<u32>),
+}
 
 pub struct RandomSeries {
     state: u32,
@@ -386,26 +386,8 @@ impl Hittable for HittableList {
     }
 }
 
-fn main() {
-    let window_width = 400.0;
-    let window_height = 400.0;
-    let event_loop = EventLoop::new();
-    let window = WindowBuilder::new()
-        .with_resizable(false)
-        //.with_decorations(false)
-        .with_inner_size(LogicalSize::new(window_width, window_height))
-        .build(&event_loop)
-        .unwrap();
-    let mut graphics_context = unsafe { GraphicsContext::new(window) }.unwrap();
-
-    let (width, height) = {
-        let size = graphics_context.window().inner_size();
-        (size.width, size.height)
-    };
+fn render(width: u32, height: u32, event_loop_proxy: EventLoopProxy<RenderEvent>) {
     let aspect_ratio = width as f32 / height as f32;
-    let mut buffer = (0..((width * height) as usize))
-        .map(|_| 0x00FFFFFF as u32)
-        .collect::<Vec<_>>();
 
     // Camera
     let viewport_height = 2.0;
@@ -418,7 +400,6 @@ fn main() {
     );
 
     // World
-
     let material_center = Rc::new(LambertianMaterial {
         albedo: Vec3::one(),
     });
@@ -445,7 +426,6 @@ fn main() {
                 radius: 100.0,
                 material: material_ground.clone(),
             }),
-
             /*
             Box::new(Sphere {
                 center: Vec3::new(-1.0, 0.0, -1.0),
@@ -463,7 +443,6 @@ fn main() {
                 radius: 0.5,
                 material: material_left.clone(),
             }),
-
             Box::new(Sphere {
                 center: Vec3::new(1.0, 0.0, -1.0),
                 radius: 0.5,
@@ -477,29 +456,50 @@ fn main() {
         ],
     };
 
-    println!("Samples per pixel: {SAMPLES_PER_PIXEL}");
     let mut series = RandomSeries::new(1234);
     for j in 0..height {
-        let row = j + 1;
-        print!("\rRow: {row}/{height}");
-        stdout().flush();
+        let mut row = vec![0; width as usize];
         for i in 0..width {
             let mut accumulated_pixel_color = Vec3::zero();
             for _ in 0..SAMPLES_PER_PIXEL {
                 let u = (i as f32 + series.random01()) / (width - 1) as f32;
                 let v = (j as f32 + series.random01()) / (height - 1) as f32;
-                let ray = camera.get_ray(u, v);
+                let ray = camera.get_ray(u, 1.0 - v);
                 accumulated_pixel_color += ray_color(&ray, &world, &mut series, 0);
             }
 
             const PIXEL_COLOR_SCALE: f32 = 1.0 / SAMPLES_PER_PIXEL as f32;
             let c = accumulated_pixel_color * PIXEL_COLOR_SCALE;
             let pixel_color = Vec3::new(c.x().sqrt(), c.y().sqrt(), c.z().sqrt());
-            buffer[((height - j - 1) * width + i) as usize] = rgb_to_u32(pixel_color);
+            row[i as usize] = rgb_to_u32(pixel_color);
         }
+        event_loop_proxy.send_event(RenderEvent::RowComplete(j, row));
     }
-    println!();
+    println!("Done!");
+}
 
+fn main() {
+    let window_width = 800.0;
+    let window_height = 600.0;
+    let event_loop = EventLoop::<RenderEvent>::with_user_event();
+    let window = WindowBuilder::new()
+        .with_resizable(false)
+        //.with_decorations(false)
+        .with_inner_size(LogicalSize::new(window_width, window_height))
+        .build(&event_loop)
+        .unwrap();
+    let mut graphics_context = unsafe { GraphicsContext::new(window) }.unwrap();
+
+    let (width, height) = {
+        let size = graphics_context.window().inner_size();
+        (size.width, size.height)
+    };
+    let event_loop_proxy = event_loop.create_proxy();
+    let thread_handle = thread::spawn(move || render(width, height, event_loop_proxy));
+
+    let mut buffer = (0..((width * height) as usize))
+        .map(|_| 0x00FFFFFF as u32)
+        .collect::<Vec<_>>();
     graphics_context.set_buffer(&buffer, width as u16, height as u16);
 
     event_loop.run(move |event, _, control_flow| {
@@ -513,7 +513,17 @@ fn main() {
             } if window_id == graphics_context.window().id() => {
                 *control_flow = ControlFlow::Exit;
             }
+            Event::UserEvent(event) => match event {
+                RenderEvent::RowComplete(row_index, data) => {
+                    for i in 0..width {
+                        buffer[(row_index * width + i) as usize] = data[i as usize];
+                    }
+                    graphics_context.set_buffer(&buffer, width as u16, height as u16);
+                }
+            },
             _ => {}
         }
     });
+
+    //thread_handle.join().unwrap();
 }
