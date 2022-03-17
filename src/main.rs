@@ -1,6 +1,10 @@
 use glam::Vec3;
 use softbuffer::GraphicsContext;
-use std::rc::Rc;
+use std::{
+    rc::Rc,
+    io::Write,
+    io::stdout,
+};
 use winit::{
     dpi::LogicalSize,
     event::{Event, WindowEvent},
@@ -473,11 +477,12 @@ fn main() {
         ],
     };
 
-    println!();
+    println!("Samples per pixel: {SAMPLES_PER_PIXEL}");
     let mut series = RandomSeries::new(1234);
     for j in 0..height {
         let row = j + 1;
         print!("\rRow: {row}/{height}");
+        stdout().flush();
         for i in 0..width {
             let mut accumulated_pixel_color = Vec3::zero();
             for _ in 0..SAMPLES_PER_PIXEL {
