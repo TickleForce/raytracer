@@ -9,7 +9,7 @@ use winit::{
     window::WindowBuilder,
 };
 
-const SAMPLES_PER_PIXEL: u32 = 256;
+const SAMPLES_PER_PIXEL: u32 = 64;
 const MAX_BOUNCES: u32 = 8;
 const BLOCK_SIZE: u32 = 32;
 
@@ -310,14 +310,15 @@ impl Material for DielectricMaterial {
             self.ior
         };
 
-        let cos_theta = f32::min(Vec3::dot(-ray_in.dir, hit.normal), 1.0);
+        let dir = ray_in.dir.normalize();
+        let cos_theta = f32::min(Vec3::dot(-dir, hit.normal), 1.0);
         let sin_theta = f32::sqrt(1.0 - cos_theta * cos_theta);
-        let cannot_refract = refraction_ratio * sin_theta > 1.0;
+        let cannot_refract = (refraction_ratio * sin_theta) > 1.0;
         let direction =
             if cannot_refract || reflectance(cos_theta, refraction_ratio) > series.random01() {
-                reflect(&ray_in.dir, &hit.normal)
+                reflect(&dir, &hit.normal)
             } else {
-                refract(&ray_in.dir, &hit.normal, refraction_ratio)
+                refract(&dir, &hit.normal, refraction_ratio)
             };
 
         *ray_out = Ray {
@@ -418,7 +419,7 @@ fn render(width: u32, height: u32, event_loop: &EventLoop<RenderEvent>, pool: &m
     });
     let material_glass = Arc::new(DielectricMaterial {
         albedo: Vec3::splat(1.0),
-        ior: 1.5,
+        ior: 1.3,
     });
 
     let world = Arc::new(HittableList {
@@ -428,7 +429,6 @@ fn render(width: u32, height: u32, event_loop: &EventLoop<RenderEvent>, pool: &m
                 radius: 100.0,
                 material: material_ground.clone(),
             }),
-            /*
             Box::new(Sphere {
                 center: Vec3::new(-1.0, 0.0, -1.0),
                 radius: 0.5,
@@ -436,15 +436,16 @@ fn render(width: u32, height: u32, event_loop: &EventLoop<RenderEvent>, pool: &m
             }),
             Box::new(Sphere {
                 center: Vec3::new(-1.0, 0.0, -1.0),
-                radius: -0.4,
+                radius: -0.45,
                 material: material_glass.clone(),
             }),
-            */
+            /*
             Box::new(Sphere {
                 center: Vec3::new(-1.0, 0.0, -1.0),
                 radius: 0.5,
                 material: material_left.clone(),
             }),
+            */
             Box::new(Sphere {
                 center: Vec3::new(1.0, 0.0, -1.0),
                 radius: 0.5,
