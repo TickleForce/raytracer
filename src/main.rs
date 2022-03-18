@@ -127,10 +127,11 @@ fn rgb_to_u32(col: Vec3) -> u32 {
 
 fn sky_color(ray: &Ray) -> Vec3 {
     let dir = Vec3::normalize(ray.dir);
-    let t = 0.5 * (dir.y() + 1.0);
+    let t = 0.5 * (dir.z() + 1.0);
     let white = Vec3::new(1.0, 1.0, 1.0);
     let blue = Vec3::new(0.5, 0.7, 1.0);
-    (1.0 - t) * white + t * blue
+    let sky_intensity = 1.0;
+    (1.0 - t) * white + t * blue * sky_intensity
 }
 
 fn ray_color(ray: &Ray, world: &dyn Hittable, series: &mut RandomSeries, depth: u32) -> Vec3 {
@@ -204,17 +205,26 @@ pub struct Camera {
 }
 
 impl Camera {
-    fn new(origin: &Vec3, viewport_width: f32, viewport_height: f32, focal_length: f32) -> Self {
-        let horizontal = Vec3::new(viewport_width, 0.0, 0.0);
-        let vertical = Vec3::new(0.0, viewport_height, 0.0);
+    fn new(look_from: Vec3, look_at: Vec3, vup: Vec3, vfov: f32, aspect_ratio: f32) -> Self {
+        let theta = vfov * std::f32::consts::PI / 180.0;
+        let h = f32::tan(theta / 2.0);
+        let viewport_height = 2.0 * h;
+        let viewport_width = aspect_ratio * viewport_height;
+
+        let w = (look_from - look_at).normalize();
+        let u = vup.cross(w).normalize();
+        let v = w.cross(u);
+
+        let origin = look_from;
+        let horizontal = viewport_width * u;
+        let vertical = viewport_height * v;
+        let lower_left_corner = origin - horizontal / 2.0 - vertical / 2.0 - w;
+
         Camera {
-            origin: *origin,
+            origin,
             horizontal,
             vertical,
-            lower_left_corner: *origin
-                - horizontal / 2.0
-                - vertical / 2.0
-                - Vec3::new(0.0, 0.0, focal_length),
+            lower_left_corner,
         }
     }
 
@@ -239,6 +249,7 @@ pub trait Material: Sync + Send {
 
 pub struct LambertianMaterial {
     albedo: Vec3,
+    normal: bool,
 }
 
 impl Material for LambertianMaterial {
@@ -254,12 +265,19 @@ impl Material for LambertianMaterial {
         if d.x().abs() + d.y().abs() + d.z().abs() < 1e-8 {
             d = hit.normal;
         }
+        /*
+        let target = hit.p + series.random_in_hemisphere(&hit.normal);
+        let d = (target - hit.p).normalize();
+        */
         *ray_out = Ray {
             origin: hit.p,
             dir: d.normalize(),
         };
-        //let surface_color = albedo;
-        let surface_color = (hit.normal + Vec3::new(1.0, 1.0, 1.0)) * 0.5;
+        let surface_color = if self.normal {
+            (hit.normal + Vec3::new(1.0, 1.0, 1.0)) * 0.5
+        } else {
+            self.albedo
+        };
         *attenuation = surface_color;
         true
     }
@@ -393,21 +411,31 @@ impl Hittable for HittableList {
 
 fn render(width: u32, height: u32, event_loop: &EventLoop<RenderEvent>, pool: &mut ThreadPool) {
     let aspect_ratio = width as f32 / height as f32;
-    let viewport_height = 2.0;
-    let viewport_width = aspect_ratio * viewport_height;
+    /*
     let camera = Camera::new(
-        &Vec3::new(0.0, 0.0, 0.0),
-        viewport_width,
-        viewport_height,
-        1.0,
+        Vec3::new(-2.0, 1.0, 2.0),
+        Vec3::new(0.0, -1.0, 0.0),
+        Vec3::unit_z(),
+        90.0,
+        aspect_ratio,
+    );
+    */
+    let camera = Camera::new(
+        Vec3::new(0.0, -2.0, 0.0),
+        Vec3::new(0.0, 1.0, 0.0),
+        Vec3::unit_z(),
+        90.0,
+        aspect_ratio,
     );
 
     // World
     let material_center = Arc::new(LambertianMaterial {
         albedo: Vec3::one(),
+        normal: true,
     });
     let material_ground = Arc::new(LambertianMaterial {
-        albedo: Vec3::one(),
+        albedo: Vec3::new(0.15, 0.9, 0.15),
+        normal: false,
     });
     let material_left = Arc::new(MetalMaterial {
         albedo: Vec3::splat(0.8),
@@ -417,44 +445,57 @@ fn render(width: u32, height: u32, event_loop: &EventLoop<RenderEvent>, pool: &m
         albedo: Vec3::splat(0.4),
         fuzz: 1.0,
     });
+    /*
     let material_glass = Arc::new(DielectricMaterial {
         albedo: Vec3::splat(1.0),
         ior: 1.3,
     });
+    */
 
     let world = Arc::new(HittableList {
         objects: vec![
             Box::new(Sphere {
-                center: Vec3::new(0.0, -100.5, -1.0),
+                center: Vec3::new(0.0, -1.0, -100.5),
                 radius: 100.0,
                 material: material_ground.clone(),
             }),
+            /*
             Box::new(Sphere {
-                center: Vec3::new(-1.0, 0.0, -1.0),
+                center: Vec3::new(-1.0, -1.0, 0.0),
                 radius: 0.5,
                 material: material_glass.clone(),
             }),
             Box::new(Sphere {
-                center: Vec3::new(-1.0, 0.0, -1.0),
+                center: Vec3::new(-1.0, -1.0, 0.0),
                 radius: -0.45,
                 material: material_glass.clone(),
             }),
-            /*
+            */
             Box::new(Sphere {
-                center: Vec3::new(-1.0, 0.0, -1.0),
+                center: Vec3::new(-1.0, -1.0, 0.0),
                 radius: 0.5,
                 material: material_left.clone(),
             }),
-            */
             Box::new(Sphere {
-                center: Vec3::new(1.0, 0.0, -1.0),
+                center: Vec3::new(1.0, -1.0, 0.0),
                 radius: 0.5,
                 material: material_right.clone(),
             }),
             Box::new(Sphere {
-                center: Vec3::new(0.0, 0.0, -1.0),
+                center: Vec3::new(0.0, -1.0, 0.0),
                 radius: 0.5,
                 material: material_center.clone(),
+            }),
+
+            Box::new(Sphere {
+                center: Vec3::new(-0.4, -1.3, -0.5 + 0.1),
+                radius: 0.1,
+                material: material_right.clone(),
+            }),
+            Box::new(Sphere {
+                center: Vec3::new(0.4, -1.3, -0.5 + 0.1),
+                radius: 0.1,
+                material: material_left.clone(),
             }),
         ],
     });
@@ -493,7 +534,8 @@ fn render(width: u32, height: u32, event_loop: &EventLoop<RenderEvent>, pool: &m
 
                         const PIXEL_COLOR_SCALE: f32 = 1.0 / SAMPLES_PER_PIXEL as f32;
                         let c = accumulated_pixel_color * PIXEL_COLOR_SCALE;
-                        let pixel_color = Vec3::new(c.x().sqrt(), c.y().sqrt(), c.z().sqrt());
+                        let pixel_color =
+                            Vec3::new(c.x().sqrt(), c.y().sqrt(), c.z().sqrt()).min(Vec3::one());
                         block[(y * block_width + x) as usize] = rgb_to_u32(pixel_color);
                     }
                 }
