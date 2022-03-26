@@ -1,4 +1,5 @@
 use glam::Vec3;
+use num_cpus;
 use softbuffer::GraphicsContext;
 use std::{sync::Arc, thread, time::Instant};
 use threadpool::ThreadPool;
@@ -9,9 +10,10 @@ use winit::{
     window::WindowBuilder,
 };
 
-const SAMPLES_PER_PIXEL: u32 = 64;
-const MAX_BOUNCES: u32 = 8;
+const SAMPLES_PER_PIXEL: u32 = 256;
+const MAX_BOUNCES: u32 = 10;
 const BLOCK_SIZE: u32 = 32;
+const NUM_THREADS: usize = 0;
 
 #[derive(Debug)]
 pub enum RenderEvent {
@@ -486,7 +488,6 @@ fn render(width: u32, height: u32, event_loop: &EventLoop<RenderEvent>, pool: &m
                 radius: 0.5,
                 material: material_center.clone(),
             }),
-
             Box::new(Sphere {
                 center: Vec3::new(-0.4, -1.3, -0.5 + 0.1),
                 radius: 0.1,
@@ -571,7 +572,13 @@ fn main() {
     };
 
     let now = Instant::now();
-    let mut pool = threadpool::Builder::new().build();
+    let num_threads = if NUM_THREADS > 0 {
+        NUM_THREADS
+    } else {
+        num_cpus::get()
+    };
+    println!("Creating threadpool with {num_threads} threads.");
+    let mut pool = ThreadPool::new(num_threads);
     render(width, height, &event_loop, &mut pool);
 
     let mut buffer = (0..((width * height) as usize))
@@ -582,7 +589,7 @@ fn main() {
     thread::spawn(move || {
         pool.join();
         let elapsed = now.elapsed();
-        println!("Finished in {:.2?}", elapsed);
+        println!("Finished in {:.2?}.", elapsed);
     });
 
     event_loop.run(move |event, _, control_flow| {
