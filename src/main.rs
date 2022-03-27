@@ -10,8 +10,8 @@ use winit::{
     window::WindowBuilder,
 };
 
-const SAMPLES_PER_PIXEL: u32 = 256;
-const MAX_BOUNCES: u32 = 10;
+const SAMPLES_PER_PIXEL: u32 = 100;
+const MAX_BOUNCES: u32 = 8;
 const BLOCK_SIZE: u32 = 32;
 const NUM_THREADS: usize = 0;
 
@@ -66,6 +66,15 @@ impl RandomSeries {
 
     pub fn random_vec3(&mut self) -> Vec3 {
         Vec3::new(self.random01(), self.random01(), self.random01())
+    }
+
+    pub fn random_in_disk(&mut self) -> Vec3 {
+        loop {
+            let p = Vec3::new(self.random(-1.0, 1.0), self.random(-1.0, 1.0), 0.0);
+            if p.length_squared() < 1.0 {
+                return p;
+            }
+        }
     }
 
     pub fn random_in_unit_sphere(&mut self) -> Vec3 {
@@ -204,10 +213,22 @@ pub struct Camera {
     horizontal: Vec3,
     vertical: Vec3,
     lower_left_corner: Vec3,
+    lens_radius: f32,
+    w: Vec3,
+    u: Vec3,
+    v: Vec3,
 }
 
 impl Camera {
-    fn new(look_from: Vec3, look_at: Vec3, vup: Vec3, vfov: f32, aspect_ratio: f32) -> Self {
+    fn new(
+        look_from: Vec3,
+        look_at: Vec3,
+        vup: Vec3,
+        vfov: f32,
+        aspect_ratio: f32,
+        aperture: f32,
+        focus_dist: f32,
+    ) -> Self {
         let theta = vfov * std::f32::consts::PI / 180.0;
         let h = f32::tan(theta / 2.0);
         let viewport_height = 2.0 * h;
@@ -218,22 +239,30 @@ impl Camera {
         let v = w.cross(u);
 
         let origin = look_from;
-        let horizontal = viewport_width * u;
-        let vertical = viewport_height * v;
-        let lower_left_corner = origin - horizontal / 2.0 - vertical / 2.0 - w;
+        let horizontal = focus_dist * viewport_width * u;
+        let vertical = focus_dist * viewport_height * v;
+        let lower_left_corner = origin - horizontal / 2.0 - vertical / 2.0 - focus_dist * w;
 
         Camera {
             origin,
             horizontal,
             vertical,
             lower_left_corner,
+            lens_radius: aperture / 2.0,
+            w,
+            u,
+            v,
         }
     }
 
-    fn get_ray(&self, u: f32, v: f32) -> Ray {
+    fn get_ray(&self, s: f32, t: f32, r: &mut RandomSeries) -> Ray {
+        let rd = self.lens_radius * r.random_in_disk();
+        let offset = self.u * rd.x() + self.v * rd.y();
         Ray {
-            origin: self.origin,
-            dir: self.lower_left_corner + u * self.horizontal + v * self.vertical - self.origin,
+            origin: self.origin + offset,
+            dir: self.lower_left_corner + s * self.horizontal + t * self.vertical
+                - self.origin
+                - offset,
         }
     }
 }
@@ -413,22 +442,33 @@ impl Hittable for HittableList {
 
 fn render(width: u32, height: u32, event_loop: &EventLoop<RenderEvent>, pool: &mut ThreadPool) {
     let aspect_ratio = width as f32 / height as f32;
-    /*
-    let camera = Camera::new(
-        Vec3::new(-2.0, 1.0, 2.0),
-        Vec3::new(0.0, -1.0, 0.0),
-        Vec3::unit_z(),
-        90.0,
-        aspect_ratio,
-    );
-    */
     let camera = Camera::new(
         Vec3::new(0.0, -2.0, 0.0),
+        Vec3::new(0.0, 1.0, 0.0),
+        Vec3::unit_z(),
+        88.0,
+        aspect_ratio,
+        0.3,
+        0.75,
+    );
+    /*
+    let camera = Camera::new(
+        Vec3::new(0.0, -3.0, 0.0),
         Vec3::new(0.0, 1.0, 0.0),
         Vec3::unit_z(),
         90.0,
         aspect_ratio,
     );
+    */
+    /*
+    let camera = Camera::new(
+        Vec3::new(2.0, -3.0, 1.0),
+        Vec3::new(0.0, 1.0, 0.0),
+        Vec3::unit_z(),
+        60.0,
+        aspect_ratio,
+    );
+    */
 
     // World
     let material_center = Arc::new(LambertianMaterial {
@@ -436,7 +476,7 @@ fn render(width: u32, height: u32, event_loop: &EventLoop<RenderEvent>, pool: &m
         normal: true,
     });
     let material_ground = Arc::new(LambertianMaterial {
-        albedo: Vec3::new(0.15, 0.9, 0.15),
+        albedo: Vec3::new(0.13, 0.8, 0.13),
         normal: false,
     });
     let material_left = Arc::new(MetalMaterial {
@@ -447,37 +487,30 @@ fn render(width: u32, height: u32, event_loop: &EventLoop<RenderEvent>, pool: &m
         albedo: Vec3::splat(0.4),
         fuzz: 1.0,
     });
-    /*
     let material_glass = Arc::new(DielectricMaterial {
         albedo: Vec3::splat(1.0),
         ior: 1.3,
     });
-    */
 
-    let world = Arc::new(HittableList {
+    let mut world = HittableList {
         objects: vec![
             Box::new(Sphere {
-                center: Vec3::new(0.0, -1.0, -100.5),
-                radius: 100.0,
+                center: Vec3::new(0.0, -1.0, -200.5),
+                radius: 200.0,
                 material: material_ground.clone(),
             }),
-            /*
             Box::new(Sphere {
                 center: Vec3::new(-1.0, -1.0, 0.0),
                 radius: 0.5,
                 material: material_glass.clone(),
             }),
+            /*
             Box::new(Sphere {
                 center: Vec3::new(-1.0, -1.0, 0.0),
                 radius: -0.45,
                 material: material_glass.clone(),
             }),
             */
-            Box::new(Sphere {
-                center: Vec3::new(-1.0, -1.0, 0.0),
-                radius: 0.5,
-                material: material_left.clone(),
-            }),
             Box::new(Sphere {
                 center: Vec3::new(1.0, -1.0, 0.0),
                 radius: 0.5,
@@ -499,10 +532,32 @@ fn render(width: u32, height: u32, event_loop: &EventLoop<RenderEvent>, pool: &m
                 material: material_left.clone(),
             }),
         ],
-    });
+    };
+
+    /*
+    let mut r = RandomSeries::new(8);
+    let materials: Vec<Arc<dyn Material>> = vec![
+        material_center,
+        material_left,
+        material_right,
+        material_glass,
+    ];
+    for i in 0..12 {
+        let p = Vec3::new(r.random(-3.0, 3.0), r.random(-3.0, 3.0), -0.25);
+        world.objects.push(Box::new(Sphere {
+            center: p,
+            radius: 0.25,
+            material: materials[r.range_i32(0, materials.len() as i32) as usize].clone(),
+        }));
+    }
+    */
+
+    let world = Arc::new(world);
 
     let num_vertical_blocks = (height as f32 / BLOCK_SIZE as f32).ceil() as u32;
     let num_horizontal_blocks = (width as f32 / BLOCK_SIZE as f32).ceil() as u32;
+    let one_over_width = 1.0 / (width - 1) as f32;
+    let one_over_height = 1.0 / (height - 1) as f32;
     for j in 0..num_vertical_blocks {
         for i in 0..num_horizontal_blocks {
             let event_loop_proxy = event_loop.create_proxy();
@@ -519,7 +574,7 @@ fn render(width: u32, height: u32, event_loop: &EventLoop<RenderEvent>, pool: &m
                     BLOCK_SIZE
                 };
 
-                let mut series = RandomSeries::new(j);
+                let mut series = RandomSeries::new(j + 1);
                 let mut block = vec![0; (block_width * block_height) as usize];
                 let ix = i * BLOCK_SIZE;
                 let iy = j * BLOCK_SIZE;
@@ -527,9 +582,9 @@ fn render(width: u32, height: u32, event_loop: &EventLoop<RenderEvent>, pool: &m
                     for x in 0..block_width {
                         let mut accumulated_pixel_color = Vec3::zero();
                         for _ in 0..SAMPLES_PER_PIXEL {
-                            let u = ((ix + x) as f32 + series.random01()) / (width - 1) as f32;
-                            let v = ((iy + y) as f32 + series.random01()) / (height - 1) as f32;
-                            let ray = camera.get_ray(u, 1.0 - v);
+                            let u = ((ix + x) as f32 + series.random01()) * one_over_width;
+                            let v = ((iy + y) as f32 + series.random01()) * one_over_height;
+                            let ray = camera.get_ray(u, 1.0 - v, &mut series);
                             accumulated_pixel_color += ray_color(&ray, &*world, &mut series, 0);
                         }
 
