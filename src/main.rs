@@ -1,12 +1,12 @@
-mod shape;
+mod camera;
 mod material;
 mod math;
-mod camera;
+mod shape;
 
-use crate::math::*;
-use crate::material::*;
-use crate::shape::*;
 use crate::camera::*;
+use crate::material::*;
+use crate::math::*;
+use crate::shape::*;
 
 use glam::Vec3;
 use num_cpus;
@@ -20,9 +20,9 @@ use winit::{
     window::WindowBuilder,
 };
 
-const SAMPLES_PER_PIXEL: u32 = 100;
-const MAX_BOUNCES: u32 = 8;
-const BLOCK_SIZE: u32 = 32;
+const SAMPLES_PER_PIXEL: u32 = 50;
+const MAX_BOUNCES: u32 = 5;
+const BLOCK_SIZE: u32 = 16;
 const NUM_THREADS: usize = 0;
 
 #[derive(Debug)]
@@ -32,11 +32,13 @@ pub enum RenderEvent {
 
 fn sky_color(ray: &Ray) -> Vec3 {
     let dir = Vec3::normalize(ray.dir);
-    let t = 0.5 * (dir.z() + 1.0);
+    let t = 0.5 * (dir.y() + 1.0);
     let white = Vec3::new(1.0, 1.0, 1.0);
     let blue = Vec3::new(0.5, 0.7, 1.0);
-    let sky_intensity = 1.0;
-    (1.0 - t) * white + t * blue * sky_intensity
+
+    let sky_intensity = Vec3::dot(dir, Vec3::new(0.0, 0.0, 1.0)).max(0.7);
+
+    ((1.0 - t) * white + t * blue) * sky_intensity
 }
 
 fn ray_color(ray: &Ray, world: &dyn Hittable, series: &mut RandomSeries, depth: u32) -> Vec3 {
@@ -75,7 +77,7 @@ fn render(width: u32, height: u32, event_loop: &EventLoop<RenderEvent>, pool: &m
         Vec3::unit_z(),
         88.0,
         aspect_ratio,
-        0.6,
+        0.2,
         0.75,
     );
     /*
@@ -289,6 +291,12 @@ fn main() {
                 RenderEvent::BlockComplete(x, y, bw, bh, data) => {
                     for j in 0..bh {
                         for i in 0..bw {
+                            /*
+                            unsafe {
+                                *buffer.get_unchecked_mut(((j + y) * width + i + x) as usize) =
+                                    *data.get_unchecked((j * bw + i) as usize);
+                            }
+                            */
                             buffer[((j + y) * width + i + x) as usize] =
                                 data[(j * bw + i) as usize];
                         }
