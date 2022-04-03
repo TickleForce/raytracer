@@ -103,7 +103,7 @@ impl Bvh {
                 },
             }
         } else if objects.len() == 1 {
-            let left = objects.remove(0);
+            let left = objects.pop().unwrap();
             let aabb = left.get_aabb();
             Bvh {
                 left: Some(left),
@@ -111,8 +111,8 @@ impl Bvh {
                 aabb,
             }
         } else if objects.len() == 2 {
-            let left = objects.swap_remove(0);
-            let right = objects.swap_remove(0);
+            let left = objects.pop().unwrap();
+            let right = objects.pop().unwrap();
             let aabb = Aabb::surrounding(&left.get_aabb(), &right.get_aabb());
             Bvh {
                 left: Some(left),
@@ -124,8 +124,8 @@ impl Bvh {
                 a.get_aabb().min[axis].partial_cmp(&b.get_aabb().min[axis]).unwrap());
             let mut left_objects = objects;
             let right_objects = left_objects.split_off(left_objects.len() / 2);
-            let left = Box::new(Bvh::new(left_objects, axis + 1 % 3));
-            let right = Box::new(Bvh::new(right_objects, axis + 2 % 3));
+            let left = Box::new(Bvh::new(left_objects, (axis + 1) % 3));
+            let right = Box::new(Bvh::new(right_objects, (axis + 1) % 3));
             let aabb = Aabb::surrounding(&left.get_aabb(), &right.get_aabb());
             Bvh {
                 left: Some(left),
@@ -148,7 +148,7 @@ impl Hittable for Bvh {
         };
 
         let hit_right = match &self.right {
-            Some(obj) => obj.hit(ray, t_min, t_max, hit),
+            Some(obj) => obj.hit(ray, t_min, if hit_left { hit.t } else { t_max }, hit),
             None => false,
         };
 

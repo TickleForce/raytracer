@@ -20,8 +20,8 @@ use winit::{
     window::WindowBuilder,
 };
 
-const SAMPLES_PER_PIXEL: u32 = 300;
-const MAX_BOUNCES: u32 = 5;
+const SAMPLES_PER_PIXEL: u32 = 100;
+const MAX_BOUNCES: u32 = 10;
 const BLOCK_SIZE: u32 = 64;
 const NUM_THREADS: usize = 0;
 
@@ -71,6 +71,7 @@ fn ray_color(ray: &Ray, world: &dyn Hittable, series: &mut RandomSeries, depth: 
 
 fn render(width: u32, height: u32, event_loop: &EventLoop<RenderEvent>, pool: &mut ThreadPool) {
     let aspect_ratio = width as f32 / height as f32;
+    /*
     let camera = Camera::new(
         Vec3::new(0.0, -2.0, 0.0),
         Vec3::new(0.0, 1.0, 0.0),
@@ -80,24 +81,16 @@ fn render(width: u32, height: u32, event_loop: &EventLoop<RenderEvent>, pool: &m
         0.1,
         0.75,
     );
-    /*
-    let camera = Camera::new(
-        Vec3::new(0.0, -3.0, 0.0),
-        Vec3::new(0.0, 1.0, 0.0),
-        Vec3::unit_z(),
-        90.0,
-        aspect_ratio,
-    );
     */
-    /*
     let camera = Camera::new(
         Vec3::new(2.0, -3.0, 1.0),
         Vec3::new(0.0, 1.0, 0.0),
         Vec3::unit_z(),
         60.0,
         aspect_ratio,
+        0.0,
+        10.0,
     );
-    */
 
     // World
     let material_center = Arc::new(LambertianMaterial {
@@ -121,67 +114,69 @@ fn render(width: u32, height: u32, event_loop: &EventLoop<RenderEvent>, pool: &m
         ior: 1.3,
     });
 
-    let mut world = HittableList {
-        objects: vec![
-            Box::new(Sphere {
-                center: Vec3::new(0.0, -1.0, -200.5),
-                radius: 200.0,
-                material: material_ground.clone(),
-            }),
-            Box::new(Sphere {
-                center: Vec3::new(-1.0, -1.0, 0.0),
-                radius: 0.5,
-                material: material_glass.clone(),
-            }),
-            /*
-            Box::new(Sphere {
-                center: Vec3::new(-1.0, -1.0, 0.0),
-                radius: -0.45,
-                material: material_glass.clone(),
-            }),
-            */
-            Box::new(Sphere {
-                center: Vec3::new(1.0, -1.0, 0.0),
-                radius: 0.5,
-                material: material_right.clone(),
-            }),
-            Box::new(Sphere {
-                center: Vec3::new(0.0, -1.0, 0.0),
-                radius: 0.5,
-                material: material_center.clone(),
-            }),
-            Box::new(Sphere {
-                center: Vec3::new(-0.4, -1.3, -0.5 + 0.1),
-                radius: 0.1,
-                material: material_right.clone(),
-            }),
-            Box::new(Sphere {
-                center: Vec3::new(0.4, -1.3, -0.5 + 0.1),
-                radius: 0.1,
-                material: material_left.clone(),
-            }),
-        ],
-    };
+    let mut objects: Vec<Box<dyn Hittable>> = vec![
+        Box::new(Sphere {
+            center: Vec3::new(0.0, -1.0, -200.5),
+            radius: 200.0,
+            material: material_ground.clone(),
+        }),
+        Box::new(Sphere {
+            center: Vec3::new(-1.0, -1.0, 0.0),
+            radius: 0.5,
+            material: material_glass.clone(),
+        }),
+        /*
+        Box::new(Sphere {
+            center: Vec3::new(-1.0, -1.0, 0.0),
+            radius: -0.45,
+            material: material_glass.clone(),
+        }),
+        */
+        Box::new(Sphere {
+            center: Vec3::new(1.0, -1.0, 0.0),
+            radius: 0.5,
+            material: material_right.clone(),
+        }),
+        Box::new(Sphere {
+            center: Vec3::new(0.0, -1.0, 0.0),
+            radius: 0.5,
+            material: material_center.clone(),
+        }),
+        Box::new(Sphere {
+            center: Vec3::new(-0.4, -1.3, -0.5 + 0.1),
+            radius: 0.1,
+            material: material_right.clone(),
+        }),
+        Box::new(Sphere {
+            center: Vec3::new(0.4, -1.3, -0.5 + 0.1),
+            radius: 0.1,
+            material: material_left.clone(),
+        }),
+    ];
 
-    /*
-    let mut r = RandomSeries::new(8);
+    let mut r = RandomSeries::new(10);
     let materials: Vec<Arc<dyn Material>> = vec![
         material_center,
         material_left,
         material_right,
         material_glass,
     ];
-    for i in 0..12 {
-        let p = Vec3::new(r.random(-3.0, 3.0), r.random(-3.0, 3.0), -0.25);
-        world.objects.push(Box::new(Sphere {
+    for _i in 0..500 {
+        //let p = Vec3::new(r.random(-5.0, 5.0), r.random(-5.0, 5.0), -0.25);
+        let p = Vec3::new(
+            r.random(-5.0, 5.0),
+            r.random(-5.0, 5.0),
+            r.random(-0.25, 5.0),
+        );
+        objects.push(Box::new(Sphere {
             center: p,
             radius: 0.25,
             material: materials[r.range_i32(0, materials.len() as i32) as usize].clone(),
         }));
     }
-    */
 
-    let world = Arc::new(world);
+    //let world = Arc::new(HittableList { objects });
+    let world = Arc::new(Bvh::new(objects, 0));
 
     let num_vertical_blocks = (height + BLOCK_SIZE - 1) / BLOCK_SIZE;
     let num_horizontal_blocks = (width + BLOCK_SIZE - 1) / BLOCK_SIZE;
@@ -233,7 +228,7 @@ fn render(width: u32, height: u32, event_loop: &EventLoop<RenderEvent>, pool: &m
                     }
 
                     // add a border to indicate in-progress tiles
-                    if (next_sample_count < SAMPLES_PER_PIXEL) {
+                    if next_sample_count < SAMPLES_PER_PIXEL {
                         let border_color = rgb_to_u32(Vec3::new(1.0, 0.0, 0.0));
                         let mut set_pixel = |x: u32, y: u32, color: u32| {
                             block[(y * block_width + x) as usize] = color;
