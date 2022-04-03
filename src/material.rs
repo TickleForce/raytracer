@@ -1,5 +1,5 @@
-use crate::math::*;
 use crate::camera::*;
+use crate::math::*;
 use glam::Vec3;
 
 pub trait Material: Sync + Send {
@@ -10,7 +10,13 @@ pub trait Material: Sync + Send {
         attenuation: &mut Vec3,
         ray_out: &mut Ray,
         series: &mut RandomSeries,
-    ) -> bool;
+    ) -> bool {
+        false
+    }
+
+    fn emit(&self, hit: &Hit) -> Vec3 {
+        Vec3::zero()
+    }
 }
 
 pub struct LambertianMaterial {
@@ -110,5 +116,15 @@ impl Material for DielectricMaterial {
             dir: direction,
         };
         true
+    }
+}
+
+pub struct EmissiveMaterial {
+    pub color: Vec3,
+}
+
+impl Material for EmissiveMaterial {
+    fn emit(&self, hit: &Hit) -> Vec3 {
+        self.color
     }
 }

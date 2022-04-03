@@ -20,7 +20,7 @@ use winit::{
     window::WindowBuilder,
 };
 
-const SAMPLES_PER_PIXEL: u32 = 100;
+const SAMPLES_PER_PIXEL: u32 = 1000;
 const MAX_BOUNCES: u32 = 10;
 const BLOCK_SIZE: u32 = 64;
 const NUM_THREADS: usize = 0;
@@ -35,8 +35,7 @@ fn sky_color(ray: &Ray) -> Vec3 {
     let t = 0.5 * (dir.y() + 1.0);
     let white = Vec3::new(1.0, 1.0, 1.0);
     let blue = Vec3::new(0.5, 0.7, 1.0);
-
-    let sky_intensity = Vec3::dot(dir, Vec3::new(0.0, 0.0, 1.0)).max(0.7);
+    let sky_intensity = 0.02;
 
     ((1.0 - t) * white + t * blue) * sky_intensity
 }
@@ -52,6 +51,7 @@ fn ray_color(ray: &Ray, world: &dyn Hittable, series: &mut RandomSeries, depth: 
             origin: Vec3::zero(),
             dir: Vec3::zero(),
         };
+        let emitted = hit.material.as_ref().unwrap().emit(&hit);
         let mut attenuation = Vec3::zero();
         if hit.material.as_ref().unwrap().scatter(
             ray,
@@ -60,9 +60,9 @@ fn ray_color(ray: &Ray, world: &dyn Hittable, series: &mut RandomSeries, depth: 
             &mut bounce_ray,
             series,
         ) {
-            attenuation * ray_color(&bounce_ray, world, series, depth + 1)
+            emitted + attenuation * ray_color(&bounce_ray, world, series, depth + 1)
         } else {
-            Vec3::zero()
+            emitted
         }
     } else {
         sky_color(ray)
@@ -112,6 +112,9 @@ fn render(width: u32, height: u32, event_loop: &EventLoop<RenderEvent>, pool: &m
     let material_glass = Arc::new(DielectricMaterial {
         albedo: Vec3::splat(1.0),
         ior: 1.3,
+    });
+    let material_glow = Arc::new(EmissiveMaterial {
+        color: Vec3::splat(10.0),
     });
 
     let mut objects: Vec<Box<dyn Hittable>> = vec![
@@ -174,6 +177,12 @@ fn render(width: u32, height: u32, event_loop: &EventLoop<RenderEvent>, pool: &m
             material: materials[r.range_i32(0, materials.len() as i32) as usize].clone(),
         }));
     }
+
+    objects.push(Box::new(Sphere {
+        center: Vec3::new(0.0, 0.0, 50.0),
+        radius: 12.0,
+        material: material_glow.clone(),
+    }));
 
     //let world = Arc::new(HittableList { objects });
     let world = Arc::new(Bvh::new(objects, 0));

@@ -619,7 +619,6 @@ name = "raytracer"
 version = "0.1.0"
 dependencies = [
  "glam",
- "instant",
  "num_cpus",
  "softbuffer",
  "threadpool",
