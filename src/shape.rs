@@ -1,10 +1,12 @@
 use crate::camera::*;
 use crate::material::*;
+use crate::math::*;
 use glam::Vec3;
-use std::{sync::Arc};
+use std::sync::Arc;
 
 pub trait Hittable: Sync + Send {
     fn hit(&self, ray: &Ray, t_min: f32, t_max: f32, hit: &mut Hit) -> bool;
+    fn get_aabb(&self) -> Aabb;
 }
 
 pub struct Sphere {
@@ -14,6 +16,7 @@ pub struct Sphere {
 }
 
 impl Hittable for Sphere {
+    // TODO: return Option<Hit> instead of a bool
     fn hit(&self, ray: &Ray, t_min: f32, t_max: f32, hit: &mut Hit) -> bool {
         let oc = ray.origin - self.center;
         let a = Vec3::length_squared(ray.dir);
@@ -41,6 +44,13 @@ impl Hittable for Sphere {
         hit.set_material(self.material.clone());
         true
     }
+
+    fn get_aabb(&self) -> Aabb {
+        Aabb {
+            min: self.center - Vec3::splat(self.radius),
+            max: self.center + Vec3::splat(self.radius),
+        }
+    }
 }
 
 pub struct HittableList {
@@ -62,5 +72,90 @@ impl Hittable for HittableList {
         }
 
         hit_anything
+    }
+
+    fn get_aabb(&self) -> Aabb {
+        self.objects.iter().fold(
+            Aabb {
+                min: Vec3::splat(f32::INFINITY),
+                max: Vec3::splat(-f32::INFINITY),
+            },
+            |aabb, obj| obj.get_aabb().surrounding(&aabb),
+        )
+    }
+}
+
+pub struct Bvh {
+    left: Option<Box<dyn Hittable>>,
+    right: Option<Box<dyn Hittable>>,
+    aabb: Aabb,
+}
+
+impl Bvh {
+    pub fn new(mut objects: Vec<Box<dyn Hittable>>, axis: usize) -> Self {
+        if objects.len() == 0 {
+            Bvh {
+                left: None,
+                right: None,
+                aabb: Aabb {
+                    min: Vec3::zero(),
+                    max: Vec3::zero(),
+                },
+            }
+        } else if objects.len() == 1 {
+            let left = objects.remove(0);
+            let aabb = left.get_aabb();
+            Bvh {
+                left: Some(left),
+                right: None,
+                aabb,
+            }
+        } else if objects.len() == 2 {
+            let left = objects.swap_remove(0);
+            let right = objects.swap_remove(0);
+            let aabb = Aabb::surrounding(&left.get_aabb(), &right.get_aabb());
+            Bvh {
+                left: Some(left),
+                right: Some(right),
+                aabb,
+            }
+        } else {
+            objects.sort_by(|a, b|
+                a.get_aabb().min[axis].partial_cmp(&b.get_aabb().min[axis]).unwrap());
+            let mut left_objects = objects;
+            let right_objects = left_objects.split_off(left_objects.len() / 2);
+            let left = Box::new(Bvh::new(left_objects, axis + 1 % 3));
+            let right = Box::new(Bvh::new(right_objects, axis + 2 % 3));
+            let aabb = Aabb::surrounding(&left.get_aabb(), &right.get_aabb());
+            Bvh {
+                left: Some(left),
+                right: Some(right),
+                aabb,
+            }
+        }
+    }
+}
+
+impl Hittable for Bvh {
+    fn hit(&self, ray: &Ray, t_min: f32, t_max: f32, hit: &mut Hit) -> bool {
+        if !self.aabb.hit(&ray.origin, &ray.dir, t_min, t_max) {
+            return false;
+        }
+
+        let hit_left = match &self.left {
+            Some(obj) => obj.hit(ray, t_min, t_max, hit),
+            None => false,
+        };
+
+        let hit_right = match &self.right {
+            Some(obj) => obj.hit(ray, t_min, t_max, hit),
+            None => false,
+        };
+
+        hit_left || hit_right
+    }
+
+    fn get_aabb(&self) -> Aabb {
+        self.aabb
     }
 }

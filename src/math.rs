@@ -103,3 +103,35 @@ pub fn rgb_to_u32(col: Vec3) -> u32 {
         | ((255.999 * col.y()) as u32) << 8
         | ((255.999 * col.z()) as u32)
 }
+
+#[derive(Copy, Clone)]
+pub struct Aabb {
+    pub min: Vec3,
+    pub max: Vec3,
+}
+
+impl Aabb {
+    pub fn hit(&self, ray_from: &Vec3, ray_dir: &Vec3, mut t_min: f32, mut t_max: f32) -> bool {
+        for axis in 0..3 {
+            let inv_d = 1.0 / ray_dir[axis];
+            let mut t0 = (self.min[axis] - ray_from[axis]) * inv_d;
+            let mut t1 = (self.max[axis] - ray_from[axis]) * inv_d;
+            if inv_d < 0.0 {
+                std::mem::swap(&mut t0, &mut t1);
+            }
+            t_min = if t0 > t_min { t0 } else { t_min };
+            t_max = if t1 < t_max { t1 } else { t_max };
+            if t_max <= t_min {
+                return false;
+            }
+        }
+        true
+    }
+
+    pub fn surrounding(&self, aabb: &Aabb) -> Aabb {
+        Aabb {
+            min: Vec3::min(self.min, aabb.min),
+            max: Vec3::max(self.max, aabb.max),
+        }
+    }
+}

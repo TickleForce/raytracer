@@ -20,7 +20,7 @@ use winit::{
     window::WindowBuilder,
 };
 
-const SAMPLES_PER_PIXEL: u32 = 50;
+const SAMPLES_PER_PIXEL: u32 = 48;
 const MAX_BOUNCES: u32 = 5;
 const BLOCK_SIZE: u32 = 16;
 const NUM_THREADS: usize = 0;
@@ -77,7 +77,7 @@ fn render(width: u32, height: u32, event_loop: &EventLoop<RenderEvent>, pool: &m
         Vec3::unit_z(),
         88.0,
         aspect_ratio,
-        0.2,
+        0.1,
         0.75,
     );
     /*
