@@ -20,9 +20,9 @@ use winit::{
     window::WindowBuilder,
 };
 
-const SAMPLES_PER_PIXEL: u32 = 48;
+const SAMPLES_PER_PIXEL: u32 = 300;
 const MAX_BOUNCES: u32 = 5;
-const BLOCK_SIZE: u32 = 16;
+const BLOCK_SIZE: u32 = 64;
 const NUM_THREADS: usize = 0;
 
 #[derive(Debug)]
@@ -183,8 +183,8 @@ fn render(width: u32, height: u32, event_loop: &EventLoop<RenderEvent>, pool: &m
 
     let world = Arc::new(world);
 
-    let num_vertical_blocks = (height as f32 / BLOCK_SIZE as f32).ceil() as u32;
-    let num_horizontal_blocks = (width as f32 / BLOCK_SIZE as f32).ceil() as u32;
+    let num_vertical_blocks = (height + BLOCK_SIZE - 1) / BLOCK_SIZE;
+    let num_horizontal_blocks = (width + BLOCK_SIZE - 1) / BLOCK_SIZE;
     let one_over_width = 1.0 / (width - 1) as f32;
     let one_over_height = 1.0 / (height - 1) as f32;
     for j in 0..num_vertical_blocks {
@@ -205,34 +205,79 @@ fn render(width: u32, height: u32, event_loop: &EventLoop<RenderEvent>, pool: &m
 
                 let mut series = RandomSeries::new(j + 1);
                 let mut block = vec![0; (block_width * block_height) as usize];
+                let mut block_accumulater =
+                    vec![Vec3::zero(); (block_width * block_height) as usize];
                 let ix = i * BLOCK_SIZE;
                 let iy = j * BLOCK_SIZE;
-                for y in 0..block_height {
-                    for x in 0..block_width {
-                        let mut accumulated_pixel_color = Vec3::zero();
-                        for _ in 0..SAMPLES_PER_PIXEL {
-                            let u = ((ix + x) as f32 + series.random01()) * one_over_width;
-                            let v = ((iy + y) as f32 + series.random01()) * one_over_height;
-                            let ray = camera.get_ray(u, 1.0 - v, &mut series);
-                            accumulated_pixel_color += ray_color(&ray, &*world, &mut series, 0);
-                        }
 
-                        const PIXEL_COLOR_SCALE: f32 = 1.0 / SAMPLES_PER_PIXEL as f32;
-                        let c = accumulated_pixel_color * PIXEL_COLOR_SCALE;
-                        let pixel_color =
-                            Vec3::new(c.x().sqrt(), c.y().sqrt(), c.z().sqrt()).min(Vec3::one());
-                        block[(y * block_width + x) as usize] = rgb_to_u32(pixel_color);
+                let mut sample_count = 0;
+                let mut next_sample_count = 10.min(SAMPLES_PER_PIXEL);
+                loop {
+                    for y in 0..block_height {
+                        for x in 0..block_width {
+                            let pixel_index = (y * block_width + x) as usize;
+                            for _ in sample_count..next_sample_count {
+                                let u = ((ix + x) as f32 + series.random01()) * one_over_width;
+                                let v = ((iy + y) as f32 + series.random01()) * one_over_height;
+                                let ray = camera.get_ray(u, 1.0 - v, &mut series);
+                                block_accumulater[pixel_index] +=
+                                    ray_color(&ray, &*world, &mut series, 0);
+                            }
+
+                            let pixel_color_scale = 1.0 / next_sample_count as f32;
+                            let c = block_accumulater[pixel_index] * pixel_color_scale;
+                            let pixel_color = Vec3::new(c.x().sqrt(), c.y().sqrt(), c.z().sqrt())
+                                .min(Vec3::one());
+                            block[pixel_index] = rgb_to_u32(pixel_color);
+                        }
                     }
+
+                    // add a border to indicate in-progress tiles
+                    if (next_sample_count < SAMPLES_PER_PIXEL) {
+                        let border_color = rgb_to_u32(Vec3::new(1.0, 0.0, 0.0));
+                        let mut set_pixel = |x: u32, y: u32, color: u32| {
+                            block[(y * block_width + x) as usize] = color;
+                        };
+                        /*
+                        for x in 0..block_width {
+                            set_pixel(x, 0, border_color);
+                            set_pixel(x, block_height - 1, border_color);
+                        }
+                        for y in 0..block_height {
+                            set_pixel(0, y, border_color);
+                            set_pixel(block_width - 1, y, border_color);
+                        }
+                        */
+                        for x in 0..5.min(block_width) {
+                            set_pixel(x, 0, border_color);
+                            set_pixel(x, block_height - 1, border_color);
+                            set_pixel(block_width - x - 1, 0, border_color);
+                            set_pixel(block_width - x - 1, block_height - 1, border_color);
+                        }
+                        for y in 0..5.min(block_height) {
+                            set_pixel(0, y, border_color);
+                            set_pixel(block_width - 1, y, border_color);
+                            set_pixel(0, block_height - y - 1, border_color);
+                            set_pixel(block_width - 1, block_height - y - 1, border_color);
+                        }
+                    }
+
+                    event_loop_proxy
+                        .send_event(RenderEvent::BlockComplete(
+                            ix,
+                            iy,
+                            block_width,
+                            block_height,
+                            block.clone(),
+                        ))
+                        .unwrap();
+
+                    if next_sample_count >= SAMPLES_PER_PIXEL {
+                        break;
+                    }
+                    sample_count = next_sample_count;
+                    next_sample_count = (next_sample_count * 2).min(SAMPLES_PER_PIXEL);
                 }
-                event_loop_proxy
-                    .send_event(RenderEvent::BlockComplete(
-                        ix,
-                        iy,
-                        block_width,
-                        block_height,
-                        block,
-                    ))
-                    .unwrap();
             });
         }
     }
