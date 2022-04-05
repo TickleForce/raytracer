@@ -120,8 +120,11 @@ impl Bvh {
                 aabb,
             }
         } else {
-            objects.sort_by(|a, b|
-                a.get_aabb().min[axis].partial_cmp(&b.get_aabb().min[axis]).unwrap());
+            objects.sort_by(|a, b| {
+                a.get_aabb().min[axis]
+                    .partial_cmp(&b.get_aabb().min[axis])
+                    .unwrap()
+            });
             let mut left_objects = objects;
             let right_objects = left_objects.split_off(left_objects.len() / 2);
             let left = Box::new(Bvh::new(left_objects, (axis + 1) % 3));
@@ -157,5 +160,95 @@ impl Hittable for Bvh {
 
     fn get_aabb(&self) -> Aabb {
         self.aabb
+    }
+}
+
+pub struct Vertex {
+    pub p: Vec3,
+    pub n: Vec3,
+}
+
+pub struct Mesh {
+    verts: Vec<Vertex>,
+    pub material: Arc<dyn Material>,
+}
+
+impl Mesh {
+    pub fn new(verts: Vec<Vertex>, material: Arc<dyn Material>) -> Self {
+        Mesh { verts, material }
+    }
+}
+
+// -> (hit, t, u, v)
+// https://www.scratchapixel.com/lessons/3d-basic-rendering/ray-tracing-rendering-a-triangle/moller-trumbore-ray-triangle-intersection
+fn ray_triangle_intersection(ray: &Ray, v0: &Vec3, v1: &Vec3, v2: &Vec3) -> (bool, f32, f32, f32) {
+    let v0v1 = *v1 - *v0;
+    let v0v2 = *v2 - *v0;
+    let pvec = ray.dir.cross(v0v2);
+    let det = v0v1.dot(pvec);
+
+    let culling = false;
+    if culling {
+        if det < std::f32::EPSILON {
+            return (false, 0.0, 0.0, 0.0);
+        }
+    } else {
+        if f32::abs(det) < f32::EPSILON {
+            return (false, 0.0, 0.0, 0.0);
+        }
+    }
+    let invDet = 1.0 / det;
+
+    let tvec = ray.origin - *v0;
+    let u = tvec.dot(pvec) * invDet;
+    if u < 0.0 || u > 1.0 {
+        return (false, 0.0, 0.0, 0.0);
+    }
+
+    let qvec = tvec.cross(v0v1);
+    let v = ray.dir.dot(qvec) * invDet;
+    if v < 0.0 || u + v > 1.0 {
+        return (false, 0.0, 0.0, 0.0);
+    }
+
+    let t = v0v2.dot(qvec) * invDet;
+    return (true, t, u, v);
+}
+
+impl Hittable for Mesh {
+    fn hit(&self, ray: &Ray, t_min: f32, t_max: f32, hit: &mut Hit) -> bool {
+        let mut any_hit = false;
+        let mut min_t = t_min;
+        let mut hit_normal = Vec3::zero();
+        for verts in self.verts.chunks(3) {
+            let (is_hit, t, u, v) =
+                ray_triangle_intersection(ray, &verts[0].p, &verts[1].p, &verts[2].p);
+            if is_hit && t >= t_min && t <= t_max {
+                any_hit = true;
+                min_t = t;
+                hit_normal = verts[0].n;
+            }
+        }
+
+        if !any_hit {
+            return false;
+        }
+
+        hit.t = min_t;
+        hit.p = ray.at(hit.t);
+        hit.set_face_normal(ray, &hit_normal);
+        hit.set_material(self.material.clone());
+
+        false
+    }
+
+    fn get_aabb(&self) -> Aabb {
+        self.verts.iter().fold(
+            Aabb {
+                min: Vec3::splat(f32::INFINITY),
+                max: Vec3::splat(-f32::INFINITY),
+            },
+            |aabb, v| aabb.surrounding_point(&v.p),
+        )
     }
 }

@@ -113,6 +113,7 @@ pub struct Aabb {
 impl Aabb {
     pub fn hit(&self, ray_from: &Vec3, ray_dir: &Vec3, mut t_min: f32, mut t_max: f32) -> bool {
         for axis in 0..3 {
+            // TODO: store this on the ray object to avoid recomputing it
             let inv_d = 1.0 / ray_dir[axis];
             let mut t0 = (self.min[axis] - ray_from[axis]) * inv_d;
             let mut t1 = (self.max[axis] - ray_from[axis]) * inv_d;
@@ -132,6 +133,13 @@ impl Aabb {
         Aabb {
             min: Vec3::min(self.min, aabb.min),
             max: Vec3::max(self.max, aabb.max),
+        }
+    }
+
+    pub fn surrounding_point(&self, p: &Vec3) -> Aabb {
+        Aabb {
+            min: Vec3::min(self.min, *p),
+            max: Vec3::max(self.max, *p),
         }
     }
 }

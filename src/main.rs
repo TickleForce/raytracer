@@ -20,9 +20,9 @@ use winit::{
     window::WindowBuilder,
 };
 
-const SAMPLES_PER_PIXEL: u32 = 1000;
-const MAX_BOUNCES: u32 = 10;
-const BLOCK_SIZE: u32 = 64;
+const SAMPLES_PER_PIXEL: u32 = 20;
+const MAX_BOUNCES: u32 = 8;
+const BLOCK_SIZE: u32 = 32;
 const NUM_THREADS: usize = 0;
 
 #[derive(Debug)]
@@ -242,16 +242,6 @@ fn render(width: u32, height: u32, event_loop: &EventLoop<RenderEvent>, pool: &m
                         let mut set_pixel = |x: u32, y: u32, color: u32| {
                             block[(y * block_width + x) as usize] = color;
                         };
-                        /*
-                        for x in 0..block_width {
-                            set_pixel(x, 0, border_color);
-                            set_pixel(x, block_height - 1, border_color);
-                        }
-                        for y in 0..block_height {
-                            set_pixel(0, y, border_color);
-                            set_pixel(block_width - 1, y, border_color);
-                        }
-                        */
                         for x in 0..5.min(block_width) {
                             set_pixel(x, 0, border_color);
                             set_pixel(x, block_height - 1, border_color);
