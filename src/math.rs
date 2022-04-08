@@ -1,4 +1,5 @@
 use glam::Vec3;
+//use rand::prelude::*;
 
 pub struct RandomSeries {
     state: u32,
@@ -20,6 +21,8 @@ impl RandomSeries {
 
     pub fn random01(&mut self) -> f32 {
         (self.xorshift32() as f64 / u32::MAX as f64) as f32
+        //let mut rng = thread_rng();
+        //rng.gen()
     }
 
     pub fn random(&mut self, min: f32, max: f32) -> f32 {
@@ -45,7 +48,11 @@ impl RandomSeries {
     }
 
     pub fn random_vec3(&mut self) -> Vec3 {
-        Vec3::new(self.random01(), self.random01(), self.random01())
+        Vec3::new(
+            self.random(-1.0, 1.0),
+            self.random(-1.0, 1.0),
+            self.random(-1.0, 1.0),
+        )
     }
 
     pub fn random_in_disk(&mut self) -> Vec3 {

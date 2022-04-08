@@ -34,7 +34,7 @@ impl Material for LambertianMaterial {
         series: &mut RandomSeries,
     ) -> bool {
         let mut d = hit.normal + series.random_on_unit_sphere();
-        if d.x().abs() + d.y().abs() + d.z().abs() < 1e-8 {
+        if d.x().abs() + d.y().abs() + d.z().abs() < f32::EPSILON {
             d = hit.normal;
         }
         /*

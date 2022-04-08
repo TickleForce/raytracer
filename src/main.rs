@@ -20,7 +20,7 @@ use winit::{
     window::WindowBuilder,
 };
 
-const SAMPLES_PER_PIXEL: u32 = 20;
+const SAMPLES_PER_PIXEL: u32 = 200;
 const MAX_BOUNCES: u32 = 8;
 const BLOCK_SIZE: u32 = 32;
 const NUM_THREADS: usize = 0;
@@ -30,23 +30,22 @@ pub enum RenderEvent {
     BlockComplete(u32, u32, u32, u32, Vec<u32>),
 }
 
-fn sky_color(ray: &Ray) -> Vec3 {
+fn sky_color(ray: &Ray, sky_intensity: f32) -> Vec3 {
     let dir = Vec3::normalize(ray.dir);
     let t = 0.5 * (dir.y() + 1.0);
     let white = Vec3::new(1.0, 1.0, 1.0);
     let blue = Vec3::new(0.5, 0.7, 1.0);
-    let sky_intensity = 0.02;
 
     ((1.0 - t) * white + t * blue) * sky_intensity
 }
 
-fn ray_color(ray: &Ray, world: &dyn Hittable, series: &mut RandomSeries, depth: u32) -> Vec3 {
+fn ray_color(ray: &Ray, world: &World, series: &mut RandomSeries, depth: u32) -> Vec3 {
     if depth >= MAX_BOUNCES {
         return Vec3::zero();
     }
 
     let mut hit = Hit::new();
-    if world.hit(ray, 0.001, f32::INFINITY, &mut hit) {
+    if world.hittable.hit(ray, 0.001, f32::INFINITY, &mut hit) {
         let mut bounce_ray = Ray {
             origin: Vec3::zero(),
             dir: Vec3::zero(),
@@ -65,34 +64,17 @@ fn ray_color(ray: &Ray, world: &dyn Hittable, series: &mut RandomSeries, depth: 
             emitted
         }
     } else {
-        sky_color(ray)
+        sky_color(ray, world.sky_intensity)
     }
 }
 
-fn render(width: u32, height: u32, event_loop: &EventLoop<RenderEvent>, pool: &mut ThreadPool) {
-    let aspect_ratio = width as f32 / height as f32;
-    /*
-    let camera = Camera::new(
-        Vec3::new(0.0, -2.0, 0.0),
-        Vec3::new(0.0, 1.0, 0.0),
-        Vec3::unit_z(),
-        88.0,
-        aspect_ratio,
-        0.1,
-        0.75,
-    );
-    */
-    let camera = Camera::new(
-        Vec3::new(2.0, -3.0, 1.0),
-        Vec3::new(0.0, 1.0, 0.0),
-        Vec3::unit_z(),
-        60.0,
-        aspect_ratio,
-        0.0,
-        10.0,
-    );
+struct World {
+    camera: Camera,
+    hittable: Box<dyn Hittable>,
+    sky_intensity: f32,
+}
 
-    // World
+fn create_world1() -> World {
     let material_center = Arc::new(LambertianMaterial {
         albedo: Vec3::one(),
         normal: true,
@@ -128,13 +110,6 @@ fn render(width: u32, height: u32, event_loop: &EventLoop<RenderEvent>, pool: &m
             radius: 0.5,
             material: material_glass.clone(),
         }),
-        /*
-        Box::new(Sphere {
-            center: Vec3::new(-1.0, -1.0, 0.0),
-            radius: -0.45,
-            material: material_glass.clone(),
-        }),
-        */
         Box::new(Sphere {
             center: Vec3::new(1.0, -1.0, 0.0),
             radius: 0.5,
@@ -184,9 +159,77 @@ fn render(width: u32, height: u32, event_loop: &EventLoop<RenderEvent>, pool: &m
         material: material_glow.clone(),
     }));
 
-    //let world = Arc::new(HittableList { objects });
-    let world = Arc::new(Bvh::new(objects, 0));
+    let camera = Camera::new(
+        Vec3::new(2.0, -3.0, 1.0),
+        Vec3::new(0.0, 1.0, 0.0),
+        Vec3::unit_z(),
+        60.0,
+        0.0,
+        10.0,
+    );
 
+    //let world = Box::new(HittableList { objects });
+    let hittable = Box::new(Bvh::new(objects, 0));
+    World {
+        camera,
+        hittable,
+        sky_intensity: 0.02,
+    }
+}
+
+fn create_world2() -> World {
+    let material1 = Arc::new(LambertianMaterial {
+        albedo: Vec3::one(),
+        normal: false,
+    });
+    let material2 = Arc::new(MetalMaterial {
+        albedo: Vec3::splat(0.8),
+        fuzz: 0.2,
+    });
+    let material_glow = Arc::new(EmissiveMaterial {
+        color: Vec3::splat(4.0),
+    });
+
+    let mut objects: Vec<Box<dyn Hittable>> = vec![
+        Box::new(Mesh::plane(2.0, -0.5, material1.clone())),
+        Box::new(Mesh::plane(2.0, 1.0, material1.clone())),
+        Box::new(Sphere {
+            center: Vec3::new(0.0, 0.0, 0.25),
+            radius: 0.5,
+            material: material1.clone(),
+        }),
+
+        Box::new(Sphere {
+            center: Vec3::new(0.0, 0.0, 1.5),
+            radius: 0.75,
+            material: material_glow.clone(),
+        }),
+    ];
+
+    let camera = Camera::new(
+        Vec3::new(0.0, -2.0, 0.0),
+        Vec3::new(0.0, 1.0, 0.0),
+        Vec3::unit_z(),
+        88.0,
+        0.001,
+        1.0,
+    );
+
+    //let hittable = Box::new(Bvh::new(objects, 0));
+    let hittable = Box::new(HittableList { objects });
+    World {
+        camera,
+        hittable,
+        sky_intensity: 0.2,
+    }
+}
+
+fn render(width: u32, height: u32, event_loop: &EventLoop<RenderEvent>, pool: &mut ThreadPool) {
+    let mut world = create_world1();
+    let aspect_ratio = width as f32 / height as f32;
+    world.camera.setup(aspect_ratio);
+
+    let world = Arc::new(world);
     let num_vertical_blocks = (height + BLOCK_SIZE - 1) / BLOCK_SIZE;
     let num_horizontal_blocks = (width + BLOCK_SIZE - 1) / BLOCK_SIZE;
     let one_over_width = 1.0 / (width - 1) as f32;
@@ -223,9 +266,9 @@ fn render(width: u32, height: u32, event_loop: &EventLoop<RenderEvent>, pool: &m
                             for _ in sample_count..next_sample_count {
                                 let u = ((ix + x) as f32 + series.random01()) * one_over_width;
                                 let v = ((iy + y) as f32 + series.random01()) * one_over_height;
-                                let ray = camera.get_ray(u, 1.0 - v, &mut series);
+                                let ray = world.camera.get_ray(u, 1.0 - v, &mut series);
                                 block_accumulater[pixel_index] +=
-                                    ray_color(&ray, &*world, &mut series, 0);
+                                    ray_color(&ray, &world, &mut series, 0);
                             }
 
                             let pixel_color_scale = 1.0 / next_sample_count as f32;

@@ -1,6 +1,7 @@
 use crate::camera::*;
 use crate::material::*;
 use crate::math::*;
+use glam::vec3;
 use glam::Vec3;
 use std::sync::Arc;
 
@@ -177,11 +178,48 @@ impl Mesh {
     pub fn new(verts: Vec<Vertex>, material: Arc<dyn Material>) -> Self {
         Mesh { verts, material }
     }
+
+    pub fn plane(s: f32, z: f32, material: Arc<dyn Material>) -> Self {
+        Mesh {
+            verts: vec![
+                Vertex {
+                    p: vec3(-s, -s, z),
+                    n: vec3(0.0, 0.0, 1.0),
+                },
+                Vertex {
+                    p: vec3(-s, s, z),
+                    n: vec3(0.0, 0.0, 1.0),
+                },
+                Vertex {
+                    p: vec3(s, -s, z),
+                    n: vec3(0.0, 0.0, 1.0),
+                },
+                Vertex {
+                    p: vec3(s, -s, z),
+                    n: vec3(0.0, 0.0, 1.0),
+                },
+                Vertex {
+                    p: vec3(-s, s, z),
+                    n: vec3(0.0, 0.0, 1.0),
+                },
+                Vertex {
+                    p: vec3(s, s, z),
+                    n: vec3(0.0, 0.0, 1.0),
+                },
+            ],
+            material,
+        }
+    }
 }
 
-// -> (hit, t, u, v)
+// -> (hit, backface, t, u, v)
 // https://www.scratchapixel.com/lessons/3d-basic-rendering/ray-tracing-rendering-a-triangle/moller-trumbore-ray-triangle-intersection
-fn ray_triangle_intersection(ray: &Ray, v0: &Vec3, v1: &Vec3, v2: &Vec3) -> (bool, f32, f32, f32) {
+fn ray_triangle_intersection(
+    ray: &Ray,
+    v0: &Vec3,
+    v1: &Vec3,
+    v2: &Vec3,
+) -> (bool, bool, f32, f32, f32) {
     let v0v1 = *v1 - *v0;
     let v0v2 = *v2 - *v0;
     let pvec = ray.dir.cross(v0v2);
@@ -190,43 +228,48 @@ fn ray_triangle_intersection(ray: &Ray, v0: &Vec3, v1: &Vec3, v2: &Vec3) -> (boo
     let culling = false;
     if culling {
         if det < std::f32::EPSILON {
-            return (false, 0.0, 0.0, 0.0);
+            return (false, false, 0.0, 0.0, 0.0);
         }
     } else {
         if f32::abs(det) < f32::EPSILON {
-            return (false, 0.0, 0.0, 0.0);
+            return (false, false, 0.0, 0.0, 0.0);
         }
     }
+    let is_backface = det < std::f32::EPSILON;
+
     let invDet = 1.0 / det;
 
     let tvec = ray.origin - *v0;
     let u = tvec.dot(pvec) * invDet;
     if u < 0.0 || u > 1.0 {
-        return (false, 0.0, 0.0, 0.0);
+        return (false, false, 0.0, 0.0, 0.0);
     }
 
     let qvec = tvec.cross(v0v1);
     let v = ray.dir.dot(qvec) * invDet;
     if v < 0.0 || u + v > 1.0 {
-        return (false, 0.0, 0.0, 0.0);
+        return (false, false, 0.0, 0.0, 0.0);
     }
 
     let t = v0v2.dot(qvec) * invDet;
-    return (true, t, u, v);
+    return (true, is_backface, t, u, v);
 }
 
 impl Hittable for Mesh {
     fn hit(&self, ray: &Ray, t_min: f32, t_max: f32, hit: &mut Hit) -> bool {
         let mut any_hit = false;
-        let mut min_t = t_min;
+        let mut min_t = t_max;
         let mut hit_normal = Vec3::zero();
         for verts in self.verts.chunks(3) {
-            let (is_hit, t, u, v) =
+            let (is_hit, is_backface, t, u, v) =
                 ray_triangle_intersection(ray, &verts[0].p, &verts[1].p, &verts[2].p);
-            if is_hit && t >= t_min && t <= t_max {
+            if is_hit && t >= t_min && t < min_t {
                 any_hit = true;
                 min_t = t;
                 hit_normal = verts[0].n;
+                if is_backface {
+                    hit_normal = hit_normal * -1.0;
+                }
             }
         }
 
@@ -239,7 +282,7 @@ impl Hittable for Mesh {
         hit.set_face_normal(ray, &hit_normal);
         hit.set_material(self.material.clone());
 
-        false
+        true
     }
 
     fn get_aabb(&self) -> Aabb {

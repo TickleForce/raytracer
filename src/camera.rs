@@ -1,10 +1,19 @@
-use crate::math::*;
 use crate::material::*;
+use crate::math::*;
 use glam::Vec3;
-use std::{sync::Arc};
+use std::sync::Arc;
 
 #[derive(Copy, Clone)]
 pub struct Camera {
+    // params
+    look_from: Vec3,
+    look_at: Vec3,
+    vup: Vec3,
+    vfov: f32,
+    aperture: f32,
+    focus_dist: f32,
+
+    // setup
     origin: Vec3,
     horizontal: Vec3,
     vertical: Vec3,
@@ -21,34 +30,51 @@ impl Camera {
         look_at: Vec3,
         vup: Vec3,
         vfov: f32,
-        aspect_ratio: f32,
         aperture: f32,
         focus_dist: f32,
     ) -> Self {
-        let theta = vfov * std::f32::consts::PI / 180.0;
+        Camera {
+            look_from,
+            look_at,
+            vup,
+            vfov,
+            aperture,
+            focus_dist,
+
+            origin: Vec3::zero(),
+            horizontal: Vec3::zero(),
+            vertical: Vec3::zero(),
+            lower_left_corner: Vec3::zero(),
+            lens_radius: 0.0,
+            w: Vec3::zero(),
+            u: Vec3::zero(),
+            v: Vec3::zero(),
+        }
+    }
+
+    pub fn setup(&mut self, aspect_ratio: f32) {
+        let theta = self.vfov * std::f32::consts::PI / 180.0;
         let h = f32::tan(theta / 2.0);
         let viewport_height = 2.0 * h;
         let viewport_width = aspect_ratio * viewport_height;
 
-        let w = (look_from - look_at).normalize();
-        let u = vup.cross(w).normalize();
+        let w = (self.look_from - self.look_at).normalize();
+        let u = self.vup.cross(w).normalize();
         let v = w.cross(u);
 
-        let origin = look_from;
-        let horizontal = focus_dist * viewport_width * u;
-        let vertical = focus_dist * viewport_height * v;
-        let lower_left_corner = origin - horizontal / 2.0 - vertical / 2.0 - focus_dist * w;
+        let origin = self.look_from;
+        let horizontal = self.focus_dist * viewport_width * u;
+        let vertical = self.focus_dist * viewport_height * v;
+        let lower_left_corner = origin - horizontal / 2.0 - vertical / 2.0 - self.focus_dist * w;
 
-        Camera {
-            origin,
-            horizontal,
-            vertical,
-            lower_left_corner,
-            lens_radius: aperture / 2.0,
-            w,
-            u,
-            v,
-        }
+        self.origin = origin;
+        self.horizontal = horizontal;
+        self.vertical = vertical;
+        self.lower_left_corner = lower_left_corner;
+        self.lens_radius = self.aperture / 2.0;
+        self.w = w;
+        self.u = u;
+        self.v = v;
     }
 
     pub fn get_ray(&self, s: f32, t: f32, r: &mut RandomSeries) -> Ray {
