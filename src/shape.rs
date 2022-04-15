@@ -1,8 +1,5 @@
-use crate::camera::*;
-use crate::material::*;
-use crate::math::*;
-use glam::vec3;
-use glam::Vec3;
+use crate::{camera::*, material::*, math::*};
+use glam::{vec3, Mat4, Vec3};
 use std::sync::Arc;
 
 pub trait Hittable: Sync + Send {
@@ -171,17 +168,30 @@ pub struct Vertex {
 
 pub struct Mesh {
     verts: Vec<Vertex>,
+    transform: Mat4,
+    inverse_transform: Mat4,
     pub material: Arc<dyn Material>,
 }
 
 impl Mesh {
-    pub fn new(verts: Vec<Vertex>, material: Arc<dyn Material>) -> Self {
-        Mesh { verts, material }
+    pub fn new(verts: Vec<Vertex>, material: Arc<dyn Material>, transform: Mat4) -> Self {
+        let v: Vec<Vec3> = verts
+            .iter()
+            .map(|v| transform.transform_point3(v.p))
+            .collect();
+        println!("{:?}", v);
+
+        Mesh {
+            verts,
+            material,
+            transform,
+            inverse_transform: transform.inverse(),
+        }
     }
 
-    pub fn plane(s: f32, z: f32, material: Arc<dyn Material>) -> Self {
-        Mesh {
-            verts: vec![
+    pub fn plane(s: f32, z: f32, material: Arc<dyn Material>, transform: Mat4) -> Self {
+        Mesh::new(
+            vec![
                 Vertex {
                     p: vec3(-s, -s, z),
                     n: vec3(0.0, 0.0, 1.0),
@@ -208,7 +218,8 @@ impl Mesh {
                 },
             ],
             material,
-        }
+            transform,
+        )
     }
 }
 
@@ -237,21 +248,21 @@ fn ray_triangle_intersection(
     }
     let is_backface = det < std::f32::EPSILON;
 
-    let invDet = 1.0 / det;
+    let inv_det = 1.0 / det;
 
     let tvec = ray.origin - *v0;
-    let u = tvec.dot(pvec) * invDet;
+    let u = tvec.dot(pvec) * inv_det;
     if u < 0.0 || u > 1.0 {
         return (false, false, 0.0, 0.0, 0.0);
     }
 
     let qvec = tvec.cross(v0v1);
-    let v = ray.dir.dot(qvec) * invDet;
+    let v = ray.dir.dot(qvec) * inv_det;
     if v < 0.0 || u + v > 1.0 {
         return (false, false, 0.0, 0.0, 0.0);
     }
 
-    let t = v0v2.dot(qvec) * invDet;
+    let t = v0v2.dot(qvec) * inv_det;
     return (true, is_backface, t, u, v);
 }
 
@@ -260,9 +271,10 @@ impl Hittable for Mesh {
         let mut any_hit = false;
         let mut min_t = t_max;
         let mut hit_normal = Vec3::zero();
+        let ray = ray.transform(&self.inverse_transform);
         for verts in self.verts.chunks(3) {
             let (is_hit, is_backface, t, u, v) =
-                ray_triangle_intersection(ray, &verts[0].p, &verts[1].p, &verts[2].p);
+                ray_triangle_intersection(&ray, &verts[0].p, &verts[1].p, &verts[2].p);
             if is_hit && t >= t_min && t < min_t {
                 any_hit = true;
                 min_t = t;
@@ -278,8 +290,11 @@ impl Hittable for Mesh {
         }
 
         hit.t = min_t;
-        hit.p = ray.at(hit.t);
-        hit.set_face_normal(ray, &hit_normal);
+        hit.p = self.transform.transform_point3(ray.at(hit.t));
+        hit.set_face_normal(
+            &ray,
+            &self.transform.transform_vector3(hit_normal).normalize(),
+        );
         hit.set_material(self.material.clone());
 
         true
@@ -291,7 +306,7 @@ impl Hittable for Mesh {
                 min: Vec3::splat(f32::INFINITY),
                 max: Vec3::splat(-f32::INFINITY),
             },
-            |aabb, v| aabb.surrounding_point(&v.p),
+            |aabb, v| aabb.surrounding_point(&self.transform.transform_point3(v.p)),
         )
     }
 }

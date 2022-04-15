@@ -1,6 +1,6 @@
 use crate::material::*;
 use crate::math::*;
-use glam::Vec3;
+use glam::{Mat4, Vec3};
 use std::sync::Arc;
 
 #[derive(Copy, Clone)]
@@ -132,5 +132,12 @@ pub struct Ray {
 impl Ray {
     pub fn at(&self, t: f32) -> Vec3 {
         self.origin + self.dir * t
+    }
+
+    pub fn transform(&self, t: &Mat4) -> Self {
+        Ray {
+            origin: t.transform_point3(self.origin),
+            dir: t.transform_vector3(self.dir),
+        }
     }
 }

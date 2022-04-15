@@ -3,12 +3,13 @@ mod material;
 mod math;
 mod shape;
 
-use crate::camera::*;
-use crate::material::*;
-use crate::math::*;
-use crate::shape::*;
+use crate::{camera::*, material::*, math::*, shape::*};
 
-use glam::Vec3;
+use glam::{
+    Vec3,
+    vec3,
+    Mat4,
+};
 use num_cpus;
 use softbuffer::GraphicsContext;
 use std::{sync::Arc, thread, time::Instant};
@@ -191,14 +192,15 @@ fn create_world2() -> World {
     });
 
     let mut objects: Vec<Box<dyn Hittable>> = vec![
-        Box::new(Mesh::plane(2.0, -0.5, material1.clone())),
-        Box::new(Mesh::plane(2.0, 1.0, material1.clone())),
+        Box::new(Mesh::plane(2.0, 0.0, material1.clone(), Mat4::from_translation(vec3(0.0, 0.0, -0.5)))),
+        Box::new(Mesh::plane(2.0, 0.0, material1.clone(), Mat4::from_translation(vec3(0.0, 0.0, 1.0)))),
+        //Box::new(Mesh::plane(2.0, -0.5, material1.clone(), Mat4::from_translation(vec3(0.0, 0.0, -0.5)))),
+        //Box::new(Mesh::plane(2.0, 1.0, material1.clone(), Mat4::from_translation(vec3(0.0, 0.0, 1.0)))),
         Box::new(Sphere {
             center: Vec3::new(0.0, 0.0, 0.25),
             radius: 0.5,
             material: material1.clone(),
         }),
-
         Box::new(Sphere {
             center: Vec3::new(0.0, 0.0, 1.5),
             radius: 0.75,
@@ -215,8 +217,8 @@ fn create_world2() -> World {
         1.0,
     );
 
-    //let hittable = Box::new(Bvh::new(objects, 0));
-    let hittable = Box::new(HittableList { objects });
+    let hittable = Box::new(Bvh::new(objects, 0));
+    //let hittable = Box::new(HittableList { objects });
     World {
         camera,
         hittable,
@@ -225,7 +227,7 @@ fn create_world2() -> World {
 }
 
 fn render(width: u32, height: u32, event_loop: &EventLoop<RenderEvent>, pool: &mut ThreadPool) {
-    let mut world = create_world1();
+    let mut world = create_world2();
     let aspect_ratio = width as f32 / height as f32;
     world.camera.setup(aspect_ratio);
 
