@@ -118,6 +118,13 @@ pub struct Aabb {
 }
 
 impl Aabb {
+    pub fn zero() -> Self {
+        Aabb {
+            min: Vec3::zero(),
+            max: Vec3::zero(),
+        }
+    }
+
     pub fn hit(&self, ray_from: &Vec3, ray_dir: &Vec3, mut t_min: f32, mut t_max: f32) -> bool {
         for axis in 0..3 {
             // TODO: store this on the ray object to avoid recomputing it

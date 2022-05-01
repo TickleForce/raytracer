@@ -192,10 +192,8 @@ fn create_world2() -> World {
     });
 
     let mut objects: Vec<Box<dyn Hittable>> = vec![
-        Box::new(Mesh::plane(2.0, 0.0, material1.clone(), Mat4::from_translation(vec3(0.0, 0.0, -0.5)))),
-        Box::new(Mesh::plane(2.0, 0.0, material1.clone(), Mat4::from_translation(vec3(0.0, 0.0, 1.0)))),
-        //Box::new(Mesh::plane(2.0, -0.5, material1.clone(), Mat4::from_translation(vec3(0.0, 0.0, -0.5)))),
-        //Box::new(Mesh::plane(2.0, 1.0, material1.clone(), Mat4::from_translation(vec3(0.0, 0.0, 1.0)))),
+        Box::new(Mesh::plane(2.0, material1.clone(), Mat4::from_translation(vec3(0.0, 0.0, -0.5)))),
+        Box::new(Mesh::plane(2.0, material1.clone(), Mat4::from_translation(vec3(0.0, 0.0, 1.0)))),
         Box::new(Sphere {
             center: Vec3::new(0.0, 0.0, 0.25),
             radius: 0.5,
