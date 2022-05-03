@@ -111,17 +111,31 @@ pub fn rgb_to_u32(col: Vec3) -> u32 {
         | ((255.999 * col.z()) as u32)
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct Aabb {
     pub min: Vec3,
     pub max: Vec3,
 }
 
 impl Aabb {
+    pub fn new(min: &Vec3, max: &Vec3) -> Self {
+        Aabb {
+            min: *min,
+            max: *max,
+        }
+    }
+
     pub fn zero() -> Self {
         Aabb {
             min: Vec3::zero(),
             max: Vec3::zero(),
+        }
+    }
+
+    pub fn infinity() -> Self {
+        Aabb {
+            min: Vec3::splat(f32::INFINITY),
+            max: Vec3::splat(-f32::INFINITY),
         }
     }
 

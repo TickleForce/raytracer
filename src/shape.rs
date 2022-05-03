@@ -161,13 +161,13 @@ impl Hittable for Bvh {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct Vertex {
     pub p: Vec3,
     pub n: Vec3,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct Triangle {
     pub v1: Vertex,
     pub v2: Vertex,
@@ -179,19 +179,18 @@ impl Triangle {
         Triangle { v1, v2, v3 }
     }
 
-    /*
     pub fn get_aabb(&self) -> Aabb {
-        Aabb::surrounding_point(self.v1.p)
-            .surrounding_point(self.v2.p)
-            .surrounding_point(self.v3.p)
+        Aabb::new(&self.v1.p, &self.v1.p)
+            .surrounding_point(&self.v2.p)
+            .surrounding_point(&self.v3.p)
     }
-    */
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 enum MeshBvhNode {
     Triangle(Triangle),
-    Node(u32, u32, Aabb),
+    Node(usize, usize, Aabb),
+    None,
 }
 
 pub struct Mesh {
@@ -199,25 +198,108 @@ pub struct Mesh {
     transform: Mat4,
     inverse_transform: Mat4,
     pub material: Arc<dyn Material>,
-    root_bvh_node: MeshBvhNode,
     bvh_nodes: Vec<MeshBvhNode>,
+    aabb: Aabb,
+}
+
+fn compute_aabb(triangles: &Vec<Triangle>) -> Aabb {
+    triangles.iter().fold(Aabb::infinity(), |aabb, tri| {
+        aabb.surrounding_point(&tri.v1.p)
+            .surrounding_point(&tri.v2.p)
+            .surrounding_point(&tri.v3.p)
+    })
 }
 
 impl Mesh {
     pub fn new(triangles: Vec<Triangle>, material: Arc<dyn Material>, transform: Mat4) -> Self {
+        let aabb = triangles.iter().fold(Aabb::infinity(), |aabb, tri| {
+            aabb.surrounding_point(&transform.transform_point3(tri.v1.p))
+                .surrounding_point(&transform.transform_point3(tri.v2.p))
+                .surrounding_point(&transform.transform_point3(tri.v3.p))
+        });
+
         let mut mesh = Mesh {
             triangles,
             material,
             transform,
             inverse_transform: transform.inverse(),
-            root_bvh_node: MeshBvhNode::Node(0, 0, Aabb::zero()),
             bvh_nodes: Vec::new(),
+            aabb,
         };
-        //mesh.build_bvh(mesh.root_bvh_node, mesh.triangles.clone());
+        mesh.build_bvh(mesh.triangles.clone(), 0);
+        println!("{:?}", mesh.bvh_nodes);
         mesh
     }
 
-    fn build_bvh(&mut self, bvh_node: &MeshBvhNode, verts: Vec<Triangle>) {}
+    fn make_triangle_node(&mut self, tri: Triangle) -> usize {
+        self.bvh_nodes.push(MeshBvhNode::Triangle(tri));
+        self.bvh_nodes.len() - 1
+    }
+
+    fn build_bvh(&mut self, mut tris: Vec<Triangle>, axis: usize) -> usize {
+        if tris.len() == 0 {
+            //println!("None");
+            self.bvh_nodes.push(MeshBvhNode::None);
+            self.bvh_nodes.len() - 1
+        } else if tris.len() == 1 {
+            //println!("Triangle");
+            self.make_triangle_node(tris.pop().unwrap())
+        } else if tris.len() == 2 {
+            //println!("BVH_Node -> tri, tri");
+            let aabb = compute_aabb(&tris);
+            let left = self.make_triangle_node(tris.pop().unwrap());
+            let right = self.make_triangle_node(tris.pop().unwrap());
+            self.bvh_nodes.push(MeshBvhNode::Node(left, right, aabb));
+            self.bvh_nodes.len() - 1
+        } else {
+            //println!("BVH_Node -> BVH_Node");
+            tris.sort_by(|a, b| {
+                a.get_aabb().min[axis]
+                    .partial_cmp(&b.get_aabb().min[axis])
+                    .unwrap()
+            });
+            let aabb = compute_aabb(&tris);
+            let mut left_tris = tris;
+            let right_tris = left_tris.split_off(left_tris.len() / 2);
+            let left = self.build_bvh(left_tris, (axis + 1) % 3);
+            let right = self.build_bvh(right_tris, (axis + 1) % 3);
+            self.bvh_nodes.push(MeshBvhNode::Node(left, right, aabb));
+            self.bvh_nodes.len() - 1
+        }
+    }
+
+    fn bvh_hit(&self, node_index: usize, ray: &Ray, t_min: f32, t_max: f32, hit: &mut Hit) -> bool {
+        let node = self.bvh_nodes[node_index];
+        if let MeshBvhNode::Triangle(triangle) = node {
+            let (is_hit, is_backface, t, u, v) =
+                ray_triangle_intersection(&ray, &triangle.v1.p, &triangle.v2.p, &triangle.v3.p);
+            if is_hit && t >= t_min && t < t_max {
+                let mut hit_normal = triangle.v1.n;
+                if is_backface {
+                    hit_normal = hit_normal * -1.0;
+                }
+                hit.t = t;
+                hit.p = self.transform.transform_point3(ray.at(t));
+                hit.set_face_normal(
+                    &ray,
+                    &self.transform.transform_vector3(hit_normal).normalize(),
+                );
+                hit.set_material(self.material.clone());
+                true
+            } else {
+                false
+            }
+        } else if let MeshBvhNode::Node(left, right, aabb) = node {
+            if !aabb.hit(&ray.origin, &ray.dir, t_min, t_max) {
+                return false;
+            }
+            let hit_left = self.bvh_hit(left, ray, t_min, t_max, hit);
+            let hit_right = self.bvh_hit(right, ray, t_min, if hit_left { hit.t } else { t_max }, hit);
+            hit_left || hit_right
+        } else {
+            false
+        }
+    }
 
     pub fn plane(s: f32, material: Arc<dyn Material>, transform: Mat4) -> Self {
         Mesh::new(
@@ -302,10 +384,13 @@ fn ray_triangle_intersection(
 
 impl Hittable for Mesh {
     fn hit(&self, ray: &Ray, t_min: f32, t_max: f32, hit: &mut Hit) -> bool {
+        let ray = ray.transform(&self.inverse_transform);
+        self.bvh_hit(self.bvh_nodes.len() - 1, &ray, t_min, t_max, hit)
+
+        /*
         let mut any_hit = false;
         let mut min_t = t_max;
         let mut hit_normal = Vec3::zero();
-        let ray = ray.transform(&self.inverse_transform);
         for triangle in self.triangles.iter() {
             let (is_hit, is_backface, t, u, v) =
                 ray_triangle_intersection(&ray, &triangle.v1.p, &triangle.v2.p, &triangle.v3.p);
@@ -330,21 +415,11 @@ impl Hittable for Mesh {
             &self.transform.transform_vector3(hit_normal).normalize(),
         );
         hit.set_material(self.material.clone());
-
         true
+        */
     }
 
     fn get_aabb(&self) -> Aabb {
-        self.triangles.iter().fold(
-            Aabb {
-                min: Vec3::splat(f32::INFINITY),
-                max: Vec3::splat(-f32::INFINITY),
-            },
-            |aabb, tri| {
-                aabb.surrounding_point(&self.transform.transform_point3(tri.v1.p))
-                    .surrounding_point(&self.transform.transform_point3(tri.v2.p))
-                    .surrounding_point(&self.transform.transform_point3(tri.v3.p))
-            },
-        )
+        self.aabb
     }
 }

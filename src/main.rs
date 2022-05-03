@@ -226,6 +226,7 @@ fn create_world2() -> World {
 
 fn render(width: u32, height: u32, event_loop: &EventLoop<RenderEvent>, pool: &mut ThreadPool) {
     let mut world = create_world2();
+    //let mut world = create_world1();
     let aspect_ratio = width as f32 / height as f32;
     world.camera.setup(aspect_ratio);
 
