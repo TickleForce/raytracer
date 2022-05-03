@@ -1,7 +1,7 @@
 use crate::{camera::*, material::*, math::*};
 use glam::{vec3, Mat4, Vec3};
+use std::collections::HashMap;
 use std::sync::Arc;
-//use tobj;
 
 pub trait Hittable: Sync + Send {
     fn hit(&self, ray: &Ray, t_min: f32, t_max: f32, hit: &mut Hit) -> bool;
@@ -179,11 +179,17 @@ pub struct Triangle {
     pub v1: Vertex,
     pub v2: Vertex,
     pub v3: Vertex,
+    pub material_index: usize,
 }
 
 impl Triangle {
-    pub fn new(v1: Vertex, v2: Vertex, v3: Vertex) -> Self {
-        Triangle { v1, v2, v3 }
+    pub fn new(v1: Vertex, v2: Vertex, v3: Vertex, material_index: usize) -> Self {
+        Triangle {
+            v1,
+            v2,
+            v3,
+            material_index,
+        }
     }
 
     pub fn get_aabb(&self) -> Aabb {
@@ -204,21 +210,34 @@ pub struct Mesh {
     triangles: Vec<Triangle>,
     transform: Mat4,
     inverse_transform: Mat4,
-    pub material: Arc<dyn Material>,
+    materials: Vec<Arc<dyn Material>>,
     bvh_nodes: Vec<MeshBvhNode>,
     aabb: Aabb,
 }
 
 fn compute_aabb(triangles: &Vec<Triangle>) -> Aabb {
-    triangles.iter().fold(Aabb::infinity(), |aabb, tri| {
+    let mut aabb = triangles.iter().fold(Aabb::infinity(), |aabb, tri| {
         aabb.surrounding_point(&tri.v1.p)
             .surrounding_point(&tri.v2.p)
             .surrounding_point(&tri.v3.p)
-    })
+    });
+
+    // prevents zero thickness
+    aabb.max[0] += 0.0001;
+    aabb.max[1] += 0.0001;
+    aabb.max[2] += 0.0001;
+    aabb.min[0] -= 0.0001;
+    aabb.min[1] -= 0.0001;
+    aabb.min[2] -= 0.0001;
+    aabb
 }
 
 impl Mesh {
-    pub fn new(triangles: Vec<Triangle>, material: Arc<dyn Material>, transform: Mat4) -> Self {
+    pub fn new(
+        triangles: Vec<Triangle>,
+        materials: Vec<Arc<dyn Material>>,
+        transform: Mat4,
+    ) -> Self {
         let aabb = triangles.iter().fold(Aabb::infinity(), |aabb, tri| {
             aabb.surrounding_point(&transform.transform_point3(tri.v1.p))
                 .surrounding_point(&transform.transform_point3(tri.v2.p))
@@ -227,14 +246,13 @@ impl Mesh {
 
         let mut mesh = Mesh {
             triangles,
-            material,
+            materials,
             transform,
             inverse_transform: transform.inverse(),
             bvh_nodes: Vec::new(),
             aabb,
         };
         mesh.build_bvh(mesh.triangles.clone(), 0);
-        //println!("{:?}", mesh.bvh_nodes);
         mesh
     }
 
@@ -254,10 +272,6 @@ impl Mesh {
         } else if tris.len() == 2 {
             //println!("BVH_Node -> tri, tri");
             let mut aabb = compute_aabb(&tris);
-            // prevents zero thickness
-            aabb.max[0] += 0.00001;
-            aabb.max[1] += 0.00001;
-            aabb.max[2] += 0.00001;
             let left = self.make_triangle_node(tris.pop().unwrap());
             let right = self.make_triangle_node(tris.pop().unwrap());
             self.bvh_nodes.push(MeshBvhNode::Node(left, right, aabb));
@@ -270,10 +284,6 @@ impl Mesh {
                     .unwrap()
             });
             let mut aabb = compute_aabb(&tris);
-            // prevents zero thickness
-            aabb.max[0] += 0.00001;
-            aabb.max[1] += 0.00001;
-            aabb.max[2] += 0.00001;
             let mut left_tris = tris;
             let right_tris = left_tris.split_off(left_tris.len() / 2);
             let left = self.build_bvh(left_tris, (axis + 1) % 3);
@@ -299,7 +309,7 @@ impl Mesh {
                     &ray,
                     &self.transform.transform_vector3(hit_normal).normalize(),
                 );
-                hit.set_material(self.material.clone());
+                hit.set_material(self.materials[triangle.material_index].clone());
                 true
             } else {
                 false
@@ -317,27 +327,33 @@ impl Mesh {
         }
     }
 
-    pub fn plane(s: f32, material: Arc<dyn Material>, transform: Mat4) -> Self {
+    pub fn plane(w: f32, h: f32, material: Arc<dyn Material>, transform: Mat4) -> Self {
         Mesh::new(
             vec![
                 Triangle::new(
-                    Vertex::new(vec3(-s, -s, 0.0), vec3(0.0, 0.0, 1.0)),
-                    Vertex::new(vec3(-s, s, 0.0), vec3(0.0, 0.0, 1.0)),
-                    Vertex::new(vec3(s, -s, 0.0), vec3(0.0, 0.0, 1.0)),
+                    Vertex::new(vec3(-w, -h, 0.0), vec3(0.0, 0.0, 1.0)),
+                    Vertex::new(vec3(-w, h, 0.0), vec3(0.0, 0.0, 1.0)),
+                    Vertex::new(vec3(w, -h, 0.0), vec3(0.0, 0.0, 1.0)),
+                    0,
                 ),
                 Triangle::new(
-                    Vertex::new(vec3(s, -s, 0.0), vec3(0.0, 0.0, 1.0)),
-                    Vertex::new(vec3(-s, s, 0.0), vec3(0.0, 0.0, 1.0)),
-                    Vertex::new(vec3(s, s, 0.0), vec3(0.0, 0.0, 1.0)),
+                    Vertex::new(vec3(w, -h, 0.0), vec3(0.0, 0.0, 1.0)),
+                    Vertex::new(vec3(-w, h, 0.0), vec3(0.0, 0.0, 1.0)),
+                    Vertex::new(vec3(w, h, 0.0), vec3(0.0, 0.0, 1.0)),
+                    0,
                 ),
             ],
-            material,
+            vec![material],
             transform,
         )
     }
 
-    pub fn from_file(filename: &str, material: Arc<dyn Material>, transform: Mat4) -> Self {
-        let (models, materials) = tobj::load_obj(
+    pub fn from_file(
+        filename: &str,
+        material_map: HashMap<String, Arc<dyn Material>>,
+        transform: Mat4,
+    ) -> Self {
+        let (obj_models, obj_materials) = tobj::load_obj(
             filename,
             &tobj::LoadOptions {
                 single_index: true,
@@ -348,11 +364,28 @@ impl Mesh {
             },
         )
         .expect("Failed to load OBJ file");
+        let obj_materials = obj_materials.expect("Failed to load materials");
+
+        let mut materials: Vec<Arc<dyn Material>> = Vec::new();
+        let mut material_index_map = HashMap::new();
+        for (material_name, material) in &material_map {
+            material_index_map.insert(material_name, materials.len());
+            materials.push(material.clone());
+        }
 
         let mut triangles: Vec<Triangle> = Vec::new();
-        for (i, m) in models.iter().enumerate() {
+        for (i, m) in obj_models.iter().enumerate() {
             let mesh = &m.mesh;
-            let vertices = mesh.indices.iter()
+            let mat = &obj_materials[mesh.material_id.unwrap_or(0)];
+
+            let material_index = if let Some(material_index) = material_index_map.get(&mat.name) {
+                *material_index
+            } else {
+                0
+            };
+            let vertices = mesh
+                .indices
+                .iter()
                 .map(|index| {
                     Vertex::new(
                         vec3(
@@ -369,11 +402,11 @@ impl Mesh {
                 })
                 .collect::<Vec<_>>();
             for verts in vertices.chunks(3) {
-                triangles.push(Triangle::new(verts[0], verts[1], verts[2]));
+                triangles.push(Triangle::new(verts[0], verts[1], verts[2], material_index));
             }
         }
 
-        Mesh::new(triangles, material, transform)
+        Mesh::new(triangles, materials, transform)
     }
 }
 
@@ -429,6 +462,7 @@ impl Hittable for Mesh {
         let mut any_hit = false;
         let mut min_t = t_max;
         let mut hit_normal = Vec3::zero();
+        let mut hit_material_index = 0;
         for triangle in self.triangles.iter() {
             let (is_hit, is_backface, t, u, v) =
                 ray_triangle_intersection(&ray, &triangle.v1.p, &triangle.v2.p, &triangle.v3.p);
@@ -436,6 +470,7 @@ impl Hittable for Mesh {
                 any_hit = true;
                 min_t = t;
                 hit_normal = triangle.v1.n;
+                hit_material_index = triangle.material_index;
                 if is_backface {
                     hit_normal = hit_normal * -1.0;
                 }
@@ -452,7 +487,7 @@ impl Hittable for Mesh {
             &ray,
             &self.transform.transform_vector3(hit_normal).normalize(),
         );
-        hit.set_material(self.material.clone());
+        hit.set_material(self.materials[hit_material_index].clone());
         true
         */
     }

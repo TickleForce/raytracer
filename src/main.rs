@@ -8,7 +8,7 @@ use crate::{camera::*, material::*, math::*, shape::*};
 use glam::{vec3, Mat4, Vec3};
 use num_cpus;
 use softbuffer::GraphicsContext;
-use std::{sync::Arc, thread, time::Instant};
+use std::{collections::HashMap, sync::Arc, thread, time::Instant};
 use threadpool::ThreadPool;
 use winit::{
     dpi::LogicalSize,
@@ -17,7 +17,7 @@ use winit::{
     window::WindowBuilder,
 };
 
-const SAMPLES_PER_PIXEL: u32 = 200;
+const SAMPLES_PER_PIXEL: u32 = 100;
 const MAX_BOUNCES: u32 = 8;
 const BLOCK_SIZE: u32 = 32;
 const NUM_THREADS: usize = 0;
@@ -175,7 +175,7 @@ fn create_world1() -> World {
 }
 
 fn create_world2() -> World {
-    let material1 = Arc::new(LambertianMaterial {
+    let material1: Arc<dyn material::Material + 'static> = Arc::new(LambertianMaterial {
         albedo: Vec3::one(),
         normal: false,
     });
@@ -190,19 +190,19 @@ fn create_world2() -> World {
     let mut objects: Vec<Box<dyn Hittable>> = vec![
         /*
         Box::new(Mesh::plane(
-            2.0,
+            2.0, 2.0,
             material1.clone(),
             Mat4::from_translation(vec3(0.0, 0.0, -0.5)),
         )),
         Box::new(Mesh::plane(
-            2.0,
+            2.0, 2.0,
             material1.clone(),
             Mat4::from_translation(vec3(0.0, 0.0, 1.0)),
         )),
         */
         Box::new(Mesh::from_file(
             "thing.obj",
-            material1.clone(),
+            HashMap::from([("default".to_string(), material1.clone())]),
             Mat4::identity(),
         )),
         /*
@@ -237,9 +237,69 @@ fn create_world2() -> World {
     }
 }
 
+fn create_cornell_box() -> World {
+    let mred: Arc<dyn material::Material + 'static> = Arc::new(LambertianMaterial {
+        albedo: vec3(0.65, 0.05, 0.05),
+        normal: false,
+    });
+    let mwhite: Arc<dyn material::Material + 'static> = Arc::new(LambertianMaterial {
+        albedo: vec3(0.73, 0.73, 0.73),
+        normal: false,
+    });
+    let mgreen: Arc<dyn material::Material + 'static> = Arc::new(LambertianMaterial {
+        albedo: vec3(0.12, 0.45, 0.15),
+        normal: false,
+    });
+    let mlight: Arc<dyn material::Material + 'static> = Arc::new(EmissiveMaterial {
+        color: vec3(15.0, 15.0, 15.0),
+    });
+    let mdefault: Arc<dyn material::Material + 'static> = Arc::new(LambertianMaterial {
+        albedo: vec3(0.5, 0.5, 0.5),
+        normal: false,
+    });
+    let mglass = Arc::new(DielectricMaterial {
+        albedo: vec3(1.0, 1.0, 1.0),
+        ior: 1.3,
+    });
+    let mmetal = Arc::new(MetalMaterial {
+        albedo: Vec3::splat(0.8),
+        fuzz: 0.8,
+    });
+    let hittable = Box::new(Mesh::from_file(
+        "cornell_box.obj",
+        HashMap::from([
+            ("default".to_string(), mdefault.clone()),
+            ("red".to_string(), mred.clone()),
+            ("green".to_string(), mgreen.clone()),
+            ("white".to_string(), mwhite.clone()),
+            ("light".to_string(), mlight.clone()),
+            ("glass".to_string(), mglass.clone()),
+            ("metal".to_string(), mmetal.clone()),
+        ]),
+        Mat4::identity(),
+    ));
+
+    let camera = Camera::new(
+        vec3(760.0, -279.5, 274.5),
+        vec3(0.0, -279.5, 274.5),
+        vec3(0.0, 0.0, 1.0),
+        40.0,
+        0.0,
+        200.0,
+    );
+
+    World {
+        camera,
+        //hittable: Box::new(Bvh::new(objects, 0)),
+        hittable,
+        sky_intensity: 0.0,
+    }
+}
+
 fn render(width: u32, height: u32, event_loop: &EventLoop<RenderEvent>, pool: &mut ThreadPool) {
-    let mut world = create_world2();
     //let mut world = create_world1();
+    //let mut world = create_world2();
+    let mut world = create_cornell_box();
     let aspect_ratio = width as f32 / height as f32;
     world.camera.setup(aspect_ratio);
 
@@ -335,7 +395,7 @@ fn render(width: u32, height: u32, event_loop: &EventLoop<RenderEvent>, pool: &m
 }
 
 fn main() {
-    let window_width = 800.0;
+    let window_width = 600.0;
     let window_height = 600.0;
     let event_loop = EventLoop::<RenderEvent>::with_user_event();
     let window = WindowBuilder::new()
