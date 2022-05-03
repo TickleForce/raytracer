@@ -5,11 +5,7 @@ mod shape;
 
 use crate::{camera::*, material::*, math::*, shape::*};
 
-use glam::{
-    Vec3,
-    vec3,
-    Mat4,
-};
+use glam::{vec3, Mat4, Vec3};
 use num_cpus;
 use softbuffer::GraphicsContext;
 use std::{sync::Arc, thread, time::Instant};
@@ -192,8 +188,21 @@ fn create_world2() -> World {
     });
 
     let mut objects: Vec<Box<dyn Hittable>> = vec![
-        Box::new(Mesh::plane(2.0, material1.clone(), Mat4::from_translation(vec3(0.0, 0.0, -0.5)))),
-        Box::new(Mesh::plane(2.0, material1.clone(), Mat4::from_translation(vec3(0.0, 0.0, 1.0)))),
+        Box::new(Mesh::plane(
+            2.0,
+            material1.clone(),
+            Mat4::from_translation(vec3(0.0, 0.0, -0.5)),
+        )),
+        Box::new(Mesh::plane(
+            2.0,
+            material1.clone(),
+            Mat4::from_translation(vec3(0.0, 0.0, 1.0)),
+        )),
+        Box::new(Mesh::from_file(
+            "thing.obj",
+            material1.clone(),
+            Mat4::identity(),
+        )),
         Box::new(Sphere {
             center: Vec3::new(0.0, 0.0, 0.25),
             radius: 0.5,
@@ -329,6 +338,7 @@ fn main() {
         .with_resizable(false)
         //.with_decorations(false)
         .with_inner_size(LogicalSize::new(window_width, window_height))
+        .with_title("Raytracer")
         .build(&event_loop)
         .unwrap();
     let mut graphics_context = unsafe { GraphicsContext::new(window) }.unwrap();

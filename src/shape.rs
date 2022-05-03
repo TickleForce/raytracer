@@ -1,6 +1,7 @@
 use crate::{camera::*, material::*, math::*};
 use glam::{vec3, Mat4, Vec3};
 use std::sync::Arc;
+//use tobj;
 
 pub trait Hittable: Sync + Send {
     fn hit(&self, ray: &Ray, t_min: f32, t_max: f32, hit: &mut Hit) -> bool;
@@ -167,6 +168,12 @@ pub struct Vertex {
     pub n: Vec3,
 }
 
+impl Vertex {
+    pub fn new(p: Vec3, n: Vec3) -> Self {
+        Vertex { p, n }
+    }
+}
+
 #[derive(Copy, Clone, Debug)]
 pub struct Triangle {
     pub v1: Vertex,
@@ -227,7 +234,7 @@ impl Mesh {
             aabb,
         };
         mesh.build_bvh(mesh.triangles.clone(), 0);
-        println!("{:?}", mesh.bvh_nodes);
+        //println!("{:?}", mesh.bvh_nodes);
         mesh
     }
 
@@ -246,7 +253,9 @@ impl Mesh {
             self.make_triangle_node(tris.pop().unwrap())
         } else if tris.len() == 2 {
             //println!("BVH_Node -> tri, tri");
-            let aabb = compute_aabb(&tris);
+            let mut aabb = compute_aabb(&tris);
+            // prevents zero thickness
+            aabb.max[2] += 0.00001;
             let left = self.make_triangle_node(tris.pop().unwrap());
             let right = self.make_triangle_node(tris.pop().unwrap());
             self.bvh_nodes.push(MeshBvhNode::Node(left, right, aabb));
@@ -258,7 +267,9 @@ impl Mesh {
                     .partial_cmp(&b.get_aabb().min[axis])
                     .unwrap()
             });
-            let aabb = compute_aabb(&tris);
+            let mut aabb = compute_aabb(&tris);
+            // prevents zero thickness
+            aabb.max[2] += 0.00001;
             let mut left_tris = tris;
             let right_tris = left_tris.split_off(left_tris.len() / 2);
             let left = self.build_bvh(left_tris, (axis + 1) % 3);
@@ -294,7 +305,8 @@ impl Mesh {
                 return false;
             }
             let hit_left = self.bvh_hit(left, ray, t_min, t_max, hit);
-            let hit_right = self.bvh_hit(right, ray, t_min, if hit_left { hit.t } else { t_max }, hit);
+            let hit_right =
+                self.bvh_hit(right, ray, t_min, if hit_left { hit.t } else { t_max }, hit);
             hit_left || hit_right
         } else {
             false
@@ -305,37 +317,59 @@ impl Mesh {
         Mesh::new(
             vec![
                 Triangle::new(
-                    Vertex {
-                        p: vec3(-s, -s, 0.0),
-                        n: vec3(0.0, 0.0, 1.0),
-                    },
-                    Vertex {
-                        p: vec3(-s, s, 0.0),
-                        n: vec3(0.0, 0.0, 1.0),
-                    },
-                    Vertex {
-                        p: vec3(s, -s, 0.0),
-                        n: vec3(0.0, 0.0, 1.0),
-                    },
+                    Vertex::new(vec3(-s, -s, 0.0), vec3(0.0, 0.0, 1.0)),
+                    Vertex::new(vec3(-s, s, 0.0), vec3(0.0, 0.0, 1.0)),
+                    Vertex::new(vec3(s, -s, 0.0), vec3(0.0, 0.0, 1.0)),
                 ),
                 Triangle::new(
-                    Vertex {
-                        p: vec3(s, -s, 0.0),
-                        n: vec3(0.0, 0.0, 1.0),
-                    },
-                    Vertex {
-                        p: vec3(-s, s, 0.0),
-                        n: vec3(0.0, 0.0, 1.0),
-                    },
-                    Vertex {
-                        p: vec3(s, s, 0.0),
-                        n: vec3(0.0, 0.0, 1.0),
-                    },
+                    Vertex::new(vec3(s, -s, 0.0), vec3(0.0, 0.0, 1.0)),
+                    Vertex::new(vec3(-s, s, 0.0), vec3(0.0, 0.0, 1.0)),
+                    Vertex::new(vec3(s, s, 0.0), vec3(0.0, 0.0, 1.0)),
                 ),
             ],
             material,
             transform,
         )
+    }
+
+    pub fn from_file(filename: &str, material: Arc<dyn Material>, transform: Mat4) -> Self {
+        let (models, materials) = tobj::load_obj(
+            filename,
+            &tobj::LoadOptions {
+                single_index: true,
+                triangulate: true,
+                ignore_points: true,
+                ignore_lines: true,
+                ..Default::default()
+            },
+        )
+        .expect("Failed to load OBJ file");
+
+        let mut triangles: Vec<Triangle> = Vec::new();
+        for (i, m) in models.iter().enumerate() {
+            let mesh = &m.mesh;
+            let vertices = (0..mesh.positions.len() / 3)
+                .map(|vtx| {
+                    Vertex::new(
+                        vec3(
+                            mesh.positions[3 * vtx],
+                            mesh.positions[3 * vtx + 1],
+                            mesh.positions[3 * vtx + 2],
+                        ),
+                        vec3(
+                            mesh.normals[3 * vtx],
+                            mesh.normals[3 * vtx + 1],
+                            mesh.normals[3 * vtx + 2],
+                        ),
+                    )
+                })
+                .collect::<Vec<_>>();
+            for verts in vertices.chunks(3) {
+                triangles.push(Triangle::new(verts[0], verts[1], verts[2]));
+            }
+        }
+
+        Mesh::new(triangles, material, transform)
     }
 }
 
