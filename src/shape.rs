@@ -255,6 +255,8 @@ impl Mesh {
             //println!("BVH_Node -> tri, tri");
             let mut aabb = compute_aabb(&tris);
             // prevents zero thickness
+            aabb.max[0] += 0.00001;
+            aabb.max[1] += 0.00001;
             aabb.max[2] += 0.00001;
             let left = self.make_triangle_node(tris.pop().unwrap());
             let right = self.make_triangle_node(tris.pop().unwrap());
@@ -269,6 +271,8 @@ impl Mesh {
             });
             let mut aabb = compute_aabb(&tris);
             // prevents zero thickness
+            aabb.max[0] += 0.00001;
+            aabb.max[1] += 0.00001;
             aabb.max[2] += 0.00001;
             let mut left_tris = tris;
             let right_tris = left_tris.split_off(left_tris.len() / 2);
@@ -348,18 +352,18 @@ impl Mesh {
         let mut triangles: Vec<Triangle> = Vec::new();
         for (i, m) in models.iter().enumerate() {
             let mesh = &m.mesh;
-            let vertices = (0..mesh.positions.len() / 3)
-                .map(|vtx| {
+            let vertices = mesh.indices.iter()
+                .map(|index| {
                     Vertex::new(
                         vec3(
-                            mesh.positions[3 * vtx],
-                            mesh.positions[3 * vtx + 1],
-                            mesh.positions[3 * vtx + 2],
+                            mesh.positions[(3 * index) as usize],
+                            mesh.positions[(3 * index + 1) as usize],
+                            mesh.positions[(3 * index + 2) as usize],
                         ),
                         vec3(
-                            mesh.normals[3 * vtx],
-                            mesh.normals[3 * vtx + 1],
-                            mesh.normals[3 * vtx + 2],
+                            mesh.normals[(3 * index) as usize],
+                            mesh.normals[(3 * index + 1) as usize],
+                            mesh.normals[(3 * index + 2) as usize],
                         ),
                     )
                 })

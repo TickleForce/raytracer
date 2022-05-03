@@ -188,6 +188,7 @@ fn create_world2() -> World {
     });
 
     let mut objects: Vec<Box<dyn Hittable>> = vec![
+        /*
         Box::new(Mesh::plane(
             2.0,
             material1.clone(),
@@ -198,19 +199,22 @@ fn create_world2() -> World {
             material1.clone(),
             Mat4::from_translation(vec3(0.0, 0.0, 1.0)),
         )),
+        */
         Box::new(Mesh::from_file(
             "thing.obj",
             material1.clone(),
             Mat4::identity(),
         )),
+        /*
         Box::new(Sphere {
             center: Vec3::new(0.0, 0.0, 0.25),
             radius: 0.5,
             material: material1.clone(),
         }),
+        */
         Box::new(Sphere {
             center: Vec3::new(0.0, 0.0, 1.5),
-            radius: 0.75,
+            radius: 0.65,
             material: material_glow.clone(),
         }),
     ];
@@ -229,7 +233,7 @@ fn create_world2() -> World {
     World {
         camera,
         hittable,
-        sky_intensity: 0.2,
+        sky_intensity: 1.5,
     }
 }
 
