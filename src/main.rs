@@ -17,10 +17,11 @@ use winit::{
     window::WindowBuilder,
 };
 
-const SAMPLES_PER_PIXEL: u32 = 100;
-const MAX_BOUNCES: u32 = 8;
-const BLOCK_SIZE: u32 = 32;
-const NUM_THREADS: usize = 0;
+const SAMPLES_PER_PIXEL: u32 = 80;
+const MAX_BOUNCES: u32 = 6;
+const BLOCK_SIZE: u32 = 64;
+const NUM_THREADS: usize = 10;
+const IMAGE_SIZE: f64 = 700.0;
 
 #[derive(Debug)]
 pub enum RenderEvent {
@@ -179,15 +180,17 @@ fn create_world2() -> World {
         albedo: Vec3::one(),
         normal: false,
     });
+    /*
     let material2 = Arc::new(MetalMaterial {
         albedo: Vec3::splat(0.8),
         fuzz: 0.2,
     });
+    */
     let material_glow = Arc::new(EmissiveMaterial {
         color: Vec3::splat(4.0),
     });
 
-    let mut objects: Vec<Box<dyn Hittable>> = vec![
+    let objects: Vec<Box<dyn Hittable>> = vec![
         /*
         Box::new(Mesh::plane(
             2.0, 2.0,
@@ -237,21 +240,39 @@ fn create_world2() -> World {
     }
 }
 
-fn create_cornell_box() -> World {
+fn create_cornell_box(filename: &str) -> World {
     let mred: Arc<dyn material::Material + 'static> = Arc::new(LambertianMaterial {
         albedo: vec3(0.65, 0.05, 0.05),
         normal: false,
     });
+    /*
+    let mred: Arc<dyn material::Material + 'static> = Arc::new(MetalMaterial {
+        albedo: vec3(0.65, 0.05, 0.05),
+        fuzz: 12.0,
+    });
+    */
     let mwhite: Arc<dyn material::Material + 'static> = Arc::new(LambertianMaterial {
         albedo: vec3(0.73, 0.73, 0.73),
         normal: false,
     });
+    /*
+    let mwhite: Arc<dyn material::Material + 'static> = Arc::new(MetalMaterial {
+        albedo: vec3(0.73, 0.73, 0.73),
+        fuzz: 8.0,
+    });
+    */
     let mgreen: Arc<dyn material::Material + 'static> = Arc::new(LambertianMaterial {
         albedo: vec3(0.12, 0.45, 0.15),
         normal: false,
     });
+    /*
+    let mgreen: Arc<dyn material::Material + 'static> = Arc::new(MetalMaterial {
+        albedo: vec3(0.12, 0.45, 0.15),
+        fuzz: 12.0,
+    });
+    */
     let mlight: Arc<dyn material::Material + 'static> = Arc::new(EmissiveMaterial {
-        color: vec3(15.0, 15.0, 15.0),
+        color: vec3(10.0, 10.0, 10.0),
     });
     let mdefault: Arc<dyn material::Material + 'static> = Arc::new(LambertianMaterial {
         albedo: vec3(0.5, 0.5, 0.5),
@@ -259,14 +280,14 @@ fn create_cornell_box() -> World {
     });
     let mglass = Arc::new(DielectricMaterial {
         albedo: vec3(1.0, 1.0, 1.0),
-        ior: 1.3,
+        ior: 2.3,
     });
     let mmetal = Arc::new(MetalMaterial {
         albedo: Vec3::splat(0.8),
-        fuzz: 0.8,
+        fuzz: 3.6,
     });
     let hittable = Box::new(Mesh::from_file(
-        "cornell_box.obj",
+        filename,
         HashMap::from([
             ("default".to_string(), mdefault.clone()),
             ("red".to_string(), mred.clone()),
@@ -290,16 +311,16 @@ fn create_cornell_box() -> World {
 
     World {
         camera,
-        //hittable: Box::new(Bvh::new(objects, 0)),
         hittable,
-        sky_intensity: 0.0,
+        sky_intensity: 0.5,
     }
 }
 
 fn render(width: u32, height: u32, event_loop: &EventLoop<RenderEvent>, pool: &mut ThreadPool) {
     //let mut world = create_world1();
     //let mut world = create_world2();
-    let mut world = create_cornell_box();
+    let mut world = create_cornell_box("cornell_box.obj");
+    //let mut world = create_cornell_box("cornell_box_plane.obj");
     let aspect_ratio = width as f32 / height as f32;
     world.camera.setup(aspect_ratio);
 
@@ -395,8 +416,8 @@ fn render(width: u32, height: u32, event_loop: &EventLoop<RenderEvent>, pool: &m
 }
 
 fn main() {
-    let window_width = 600.0;
-    let window_height = 600.0;
+    let window_width = IMAGE_SIZE;
+    let window_height = IMAGE_SIZE;
     let event_loop = EventLoop::<RenderEvent>::with_user_event();
     let window = WindowBuilder::new()
         .with_resizable(false)

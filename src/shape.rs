@@ -271,7 +271,7 @@ impl Mesh {
             self.make_triangle_node(tris.pop().unwrap())
         } else if tris.len() == 2 {
             //println!("BVH_Node -> tri, tri");
-            let mut aabb = compute_aabb(&tris);
+            let aabb = compute_aabb(&tris);
             let left = self.make_triangle_node(tris.pop().unwrap());
             let right = self.make_triangle_node(tris.pop().unwrap());
             self.bvh_nodes.push(MeshBvhNode::Node(left, right, aabb));
@@ -283,7 +283,7 @@ impl Mesh {
                     .partial_cmp(&b.get_aabb().min[axis])
                     .unwrap()
             });
-            let mut aabb = compute_aabb(&tris);
+            let aabb = compute_aabb(&tris);
             let mut left_tris = tris;
             let right_tris = left_tris.split_off(left_tris.len() / 2);
             let left = self.build_bvh(left_tris, (axis + 1) % 3);
@@ -296,7 +296,7 @@ impl Mesh {
     fn bvh_hit(&self, node_index: usize, ray: &Ray, t_min: f32, t_max: f32, hit: &mut Hit) -> bool {
         let node = self.bvh_nodes[node_index];
         if let MeshBvhNode::Triangle(triangle) = node {
-            let (is_hit, is_backface, t, u, v) =
+            let (is_hit, is_backface, t, _u, _v) =
                 ray_triangle_intersection(&ray, &triangle.v1.p, &triangle.v2.p, &triangle.v3.p);
             if is_hit && t >= t_min && t < t_max {
                 let mut hit_normal = triangle.v1.n;
@@ -374,7 +374,7 @@ impl Mesh {
         }
 
         let mut triangles: Vec<Triangle> = Vec::new();
-        for (i, m) in obj_models.iter().enumerate() {
+        for (_i, m) in obj_models.iter().enumerate() {
             let mesh = &m.mesh;
             let mat = &obj_materials[mesh.material_id.unwrap_or(0)];
 

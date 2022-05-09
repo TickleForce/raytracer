@@ -1,0 +1,50 @@
+# Blender MTL File: 'cornell_box.blend'
+# Material Count: 4
+
+newmtl green
+Ns 0.000000
+Ka 1.000000 1.000000 1.000000
+Kd 0.000000 1.000000 0.000000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+d 1.000000
+illum 1
+map_Bump /dummy_texture.png
+map_Kd /dummy_texture.png
+map_Ks /dummy_texture.png
+map_d /dummy_texture.png
+
+newmtl light
+Ns 0.000000
+Ka 1.000000 1.000000 1.000000
+Kd 1.000000 1.000000 1.000000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.250000
+d 0.800000
+illum 1
+
+newmtl red
+Ns 1000.000000
+Ka 1.000000 1.000000 1.000000
+Kd 1.000000 0.000000 0.000000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+d 1.000000
+illum 1
+map_Bump /spaces.jpg
+map_Kd /spaces.jpg
+map_Ks /spaces.jpg
+map_d /spaces.jpg
+
+newmtl white
+Ns 0.000000
+Ka 1.000000 1.000000 1.000000
+Kd 1.000000 1.000000 1.000000
+Ks 0.000000 0.000000 0.000000
+Ke 1.000000 1.000000 1.000000
+Ni 1.450000
+d 1.000000
+illum 1

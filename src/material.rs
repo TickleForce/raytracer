@@ -5,16 +5,16 @@ use glam::Vec3;
 pub trait Material: Sync + Send {
     fn scatter(
         &self,
-        ray_in: &Ray,
-        hit: &Hit,
-        attenuation: &mut Vec3,
-        ray_out: &mut Ray,
-        series: &mut RandomSeries,
+        _ray_in: &Ray,
+        _hit: &Hit,
+        _attenuation: &mut Vec3,
+        _ray_out: &mut Ray,
+        _series: &mut RandomSeries,
     ) -> bool {
         false
     }
 
-    fn emit(&self, hit: &Hit) -> Vec3 {
+    fn emit(&self, _hit: &Hit) -> Vec3 {
         Vec3::zero()
     }
 }
@@ -124,7 +124,7 @@ pub struct EmissiveMaterial {
 }
 
 impl Material for EmissiveMaterial {
-    fn emit(&self, hit: &Hit) -> Vec3 {
+    fn emit(&self, _hit: &Hit) -> Vec3 {
         self.color
     }
 }

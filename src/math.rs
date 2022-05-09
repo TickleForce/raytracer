@@ -38,6 +38,7 @@ impl RandomSeries {
         }
     }
 
+    /*
     pub fn range_u32(&mut self, min: u32, max: u32) -> u32 {
         let diff = max - min;
         if diff > 0 {
@@ -46,6 +47,7 @@ impl RandomSeries {
             min
         }
     }
+    */
 
     pub fn random_vec3(&mut self) -> Vec3 {
         Vec3::new(
@@ -77,6 +79,7 @@ impl RandomSeries {
         self.random_in_unit_sphere().normalize()
     }
 
+    /*
     pub fn random_in_hemisphere(&mut self, normal: &Vec3) -> Vec3 {
         let v = self.random_in_unit_sphere();
         if Vec3::dot(v, *normal) > 0.0 {
@@ -85,6 +88,7 @@ impl RandomSeries {
             -v
         }
     }
+    */
 }
 
 pub fn reflect(v: &Vec3, n: &Vec3) -> Vec3 {
@@ -125,12 +129,14 @@ impl Aabb {
         }
     }
 
+    /*
     pub fn zero() -> Self {
         Aabb {
             min: Vec3::zero(),
             max: Vec3::zero(),
         }
     }
+    */
 
     pub fn infinity() -> Self {
         Aabb {
