@@ -263,21 +263,17 @@ impl Mesh {
 
     fn build_bvh(&mut self, mut tris: Vec<Triangle>, axis: usize) -> usize {
         if tris.len() == 0 {
-            //println!("None");
             self.bvh_nodes.push(MeshBvhNode::None);
             self.bvh_nodes.len() - 1
         } else if tris.len() == 1 {
-            //println!("Triangle");
             self.make_triangle_node(tris.pop().unwrap())
         } else if tris.len() == 2 {
-            //println!("BVH_Node -> tri, tri");
             let aabb = compute_aabb(&tris);
             let left = self.make_triangle_node(tris.pop().unwrap());
             let right = self.make_triangle_node(tris.pop().unwrap());
             self.bvh_nodes.push(MeshBvhNode::Node(left, right, aabb));
             self.bvh_nodes.len() - 1
         } else {
-            //println!("BVH_Node -> BVH_Node");
             tris.sort_by(|a, b| {
                 a.get_aabb().min[axis]
                     .partial_cmp(&b.get_aabb().min[axis])

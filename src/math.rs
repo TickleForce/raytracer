@@ -145,7 +145,7 @@ impl Aabb {
         }
     }
 
-    // TODO: Fix this to correctly detect hits for zero-thickness in any dimension
+    // NOTE: The AABB must have > 0 thickness on every axis
     pub fn hit(&self, ray_from: &Vec3, ray_dir: &Vec3, mut t_min: f32, mut t_max: f32) -> bool {
         for axis in 0..3 {
             // TODO: store this on the ray object to avoid recomputing it
