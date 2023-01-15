@@ -17,11 +17,11 @@ use winit::{
     window::WindowBuilder,
 };
 
-const SAMPLES_PER_PIXEL: u32 = 80;
+const SAMPLES_PER_PIXEL: u32 = 400;
 const MAX_BOUNCES: u32 = 6;
 const BLOCK_SIZE: u32 = 64;
 const NUM_THREADS: usize = 10;
-const IMAGE_SIZE: f64 = 700.0;
+const IMAGE_SIZE: f64 = 400.0;
 
 #[derive(Debug)]
 pub enum RenderEvent {
